@@ -26,42 +26,14 @@ public final class StormConfig {
     /** Per-band opacity multiplier (fog/top cap; texture carries most fill). */
     public static float wallPeakAlpha = 0.45f;
 
-    /** Number of concentric wall copies at increasing radii (1 = single wall only). */
-    public static int wallLayerCount = 1;
-
-    /** Outward gap before the first outer shell, in blocks (then each gap scales up). */
-    public static float wallLayerSpacingStart = 5f;
-
-    /** Each successive shell gap is multiplied by this (5 → 10 → 20 → 40 …). */
-    public static float wallLayerSpacingMultiplier = 2f;
-
-    /** Cumulative outward offset for a shell layer (0 = storm radius boundary). */
-    public static double shellRadiusOffset(int layerIndex) {
-        if (layerIndex <= 0) {
-            return 0.0;
-        }
-        double offset = 0.0;
-        double gap = wallLayerSpacingStart;
-        for (int i = 0; i < layerIndex; i++) {
-            offset += gap;
-            gap *= wallLayerSpacingMultiplier;
-        }
-        return offset;
-    }
-
-    /** World-locked shell radius for the given layer index. */
-    public static double shellRadius(double baseRadius, int layerIndex) {
-        return baseRadius + shellRadiusOffset(layerIndex);
-    }
-
     /** Cylinder segment count; lower is faster, higher is smoother. */
     public static int wallSegments = 64;
 
     /** World blocks per texture tile repeat (larger = less visible tiling). */
     public static float wallTextureBlockSize = 100f;
 
-    /** Voronoi texture resolution (power-of-two recommended). */
-    public static int wallTextureSize = 512;
+    /** Tile resolution used when baking {@code wall_morph_atlas.png} (runtime loads the asset). */
+    public static int wallTextureSize = 256;
 
     /** Baked texture alpha at lightest cell interiors (after fill+edge bake). */
     public static float wallTextureMinAlpha = 0.38f;
@@ -75,8 +47,14 @@ public final class StormConfig {
     /** Width of dense cell-wall bands in Voronoi space. */
     public static float wallVoronoiEdgeWidth = 0.20f;
 
-    /** W separation between concentric layers in the pseudo-3D field (baked into layer textures). */
-    public static float wallVoronoiLayerSeparation = 0.37f;
+    /**
+     * W-slices in the pre-baked morph atlas (must match {@code wall_morph_atlas.png}).
+     * Prefer matching anim frame count for even W steps.
+     */
+    public static int wallVoronoiMorphSliceCount = 128;
+
+    /** Seconds for one full loop through all morph slices. */
+    public static float wallVoronoiMorphCycleSeconds = 32f;
 
     /** Storm wall solid tint (RGB 0-255). */
     public static int wallColorR = 255;

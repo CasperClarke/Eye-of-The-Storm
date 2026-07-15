@@ -4,24 +4,29 @@ import com.eyeofthestorm.StormConfig;
 import net.minecraft.util.Mth;
 
 /**
- * Toroidal 3D Voronoi baked into layer textures at startup.
- * Each cell gets a random interior shade; cell walls (far from seed points) are denser/darker.
+ * Unit-cube toroidal Voronoi: seamless when tiling in U, V, or W.
+ * Coordinates are in {@code [0, 1)} per axis; the field repeats with period 1.
+ * Morph animation advances W through one period so the loop matches W=0.
  */
 public final class StormWallVoronoi {
     private static final long SEED = 0x0156A11CL;
 
     private StormWallVoronoi() {}
 
-    /** Bakes a seamless 2D slice of the 3D field at {@code w}. Returns density 0..1. */
+    /**
+     * Bakes one UV tile at normalized depth {@code w} (wrapped into {@code [0, 1)}).
+     * Returns density 0..1.
+     */
     public static float[][] bakeSlice(int size, float w) {
         float[][] density = new float[size][size];
         float inv = 1.0f / size;
+        float ww = wrap01(w);
 
         for (int y = 0; y < size; y++) {
             for (int x = 0; x < size; x++) {
                 float u = (x + 0.5f) * inv;
                 float v = (y + 0.5f) * inv;
-                density[x][y] = cellDensity(u, v, w);
+                density[x][y] = cellDensity(u, v, ww);
             }
         }
         return density;
@@ -74,7 +79,6 @@ public final class StormWallVoronoi {
         }
 
         float cellRoll = hash01(wrapCell(nearestCx, periodCells), wrapCell(nearestCy, periodCells), wrapCell(nearestCz, periodCells), 7);
-        // Every cell has visible fill; edges stack extra density on top (not replacing fill).
         float fill = Mth.lerp(0.32f, 0.52f, cellRoll);
 
         float edgeDist = (float) Math.sqrt(f2) - (float) Math.sqrt(f1);
@@ -88,6 +92,11 @@ public final class StormWallVoronoi {
         ));
 
         return Mth.clamp(fill + edgeFactor * edgeBoost * (1.0f - fill), 0.0f, 1.0f);
+    }
+
+    private static float wrap01(float t) {
+        t -= Mth.floor(t);
+        return t < 0.0f ? t + 1.0f : t;
     }
 
     private static float toroidalDistSq(

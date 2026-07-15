@@ -14,6 +14,7 @@ import com.mojang.blaze3d.vertex.VertexFormat;
 import com.mojang.blaze3d.vertex.VertexSorting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.GameRenderer;
+import net.minecraft.client.renderer.ShaderInstance;
 import net.minecraft.util.Mth;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
@@ -25,7 +26,7 @@ import org.joml.Matrix4f;
 import org.joml.Matrix4fStack;
 
 /**
- * Storm wall as densely stacked concentric cylinder shells tinted to a solid color.
+ * Storm wall as a single cylinder shell tinted to a solid color.
  * 16-block vertical bands for render-distance fog culling; top cap fades near wallTopY.
  */
 @EventBusSubscriber(modid = EyeOfTheStormMod.MOD_ID, value = Dist.CLIENT)
@@ -100,11 +101,7 @@ public final class StormWallRenderer {
             return;
         }
 
-        int layerCount = Math.max(1, StormConfig.wallLayerCount);
-        for (int layer = layerCount - 1; layer >= 0; layer--) {
-            double layerRadius = StormConfig.shellRadius(radius, layer);
-            drawLayer(cx, cz, layerRadius, layer, cam, viewWorldMin, viewWorldMax, r, g, b);
-        }
+        drawShell(cx, cz, radius, cam, viewWorldMin, viewWorldMax, r, g, b);
 
         teardownRenderState();
         restoreMatrices(modelViewStack, previousProjection);
@@ -120,12 +117,11 @@ public final class StormWallRenderer {
         RenderSystem.setProjectionMatrix(previousProjection, VertexSorting.DISTANCE_TO_ORIGIN);
     }
 
-    /** One draw call per layer; per-vertex fog alpha interpolates across each quad. */
-    private static void drawLayer(
+    /** One draw call; per-vertex fog alpha interpolates across each quad. */
+    private static void drawShell(
             double cx,
             double cz,
-            double layerRadius,
-            int layerIndex,
+            double radius,
             Vec3 cam,
             double viewWorldMin,
             double viewWorldMax,
@@ -137,15 +133,18 @@ public final class StormWallRenderer {
                 VertexFormat.Mode.QUADS,
                 DefaultVertexFormat.POSITION_TEX_COLOR
         );
-        forEachShellAtRadius(viewWorldMin, viewWorldMax, (wy0, wy1) -> {
+        forEachVerticalBand(viewWorldMin, viewWorldMax, (wy0, wy1) -> {
             float yCam0 = (float) (wy0 - cam.y);
             float yCam1 = (float) (wy1 - cam.y);
-            appendCylinderRing(buffer, cx, cz, layerRadius, cam, wy0, wy1, yCam0, yCam1);
+            appendCylinderRing(buffer, cx, cz, radius, cam, wy0, wy1, yCam0, yCam1);
         });
 
         var mesh = buffer.build();
         if (mesh != null) {
-            RenderSystem.setShaderTexture(0, StormWallTextures.forLayer(layerIndex));
+            ShaderInstance shader = StormWallShader.get();
+            float stormRelX = (float) (cx - cam.x);
+            float stormRelZ = (float) (cz - cam.z);
+            StormWallTextures.applyMorphToShader(shader, stormRelX, stormRelZ);
             RenderSystem.setShaderColor(r, g, b, 1.0F);
             BufferUploader.drawWithShader(mesh);
         }
@@ -156,13 +155,8 @@ public final class StormWallRenderer {
         void accept(double worldY0, double worldY1);
     }
 
-    @FunctionalInterface
-    private interface RenderedShellVisitor {
-        void accept(int layerIndex, double shellRadius, double worldY0, double worldY1, float alpha);
-    }
-
     /** 16-block bands from view min to wall top; fog culls distant bands per vertex. */
-    private static void forEachShellAtRadius(
+    private static void forEachVerticalBand(
             double viewWorldMin,
             double viewWorldMax,
             ShellSliceVisitor visitor
@@ -181,25 +175,6 @@ public final class StormWallRenderer {
     private static void ensureTexturesRegistered() {
         if (!StormWallTextures.isRegistered()) {
             StormWallTextures.register();
-        }
-    }
-
-    /** Same shell slices as the wall renderer (layers and 16-block bands). */
-    private static void forEachRenderedShell(
-            double baseRadius,
-            double viewWorldMin,
-            double viewWorldMax,
-            RenderedShellVisitor visitor
-    ) {
-        int layerCount = Math.max(1, StormConfig.wallLayerCount);
-
-        for (int layer = 0; layer < layerCount; layer++) {
-            double shellRadius = StormConfig.shellRadius(baseRadius, layer);
-            int layerIndex = layer;
-            forEachShellAtRadius(viewWorldMin, viewWorldMax, (wy0, wy1) -> {
-                float midY = (float) ((wy0 + wy1) * 0.5);
-                visitor.accept(layerIndex, shellRadius, wy0, wy1, topCapAlpha(midY));
-            });
         }
     }
 
@@ -263,7 +238,6 @@ public final class StormWallRenderer {
                 GlStateManager.SourceFactor.ONE,
                 GlStateManager.DestFactor.ZERO
         );
-        RenderSystem.setShaderTexture(0, StormWallTextures.ORGANIC);
         RenderSystem.depthMask(false);
         // Soft alpha (no discard). Safe under Iris when drawn at AFTER_LEVEL.
         RenderSystem.setShader(StormWallShader::get);
@@ -399,11 +373,12 @@ public final class StormWallRenderer {
                 DefaultVertexFormat.POSITION_COLOR
         );
 
-        forEachRenderedShell(baseRadius, viewWorldMin, viewWorldMax, (layer, shellRadius, wy0, wy1, alpha) -> {
-            float[] color = wireframeColor(layer, alpha);
+        forEachVerticalBand(viewWorldMin, viewWorldMax, (wy0, wy1) -> {
+            float midY = (float) ((wy0 + wy1) * 0.5);
+            float alpha = topCapAlpha(midY);
             appendShellWireframe(
-                    buffer, cx, cz, shellRadius, cam, wy0, wy1,
-                    color[0], color[1], color[2], color[3]
+                    buffer, cx, cz, baseRadius, cam, wy0, wy1,
+                    0.95f, 0.92f, 0.2f, 0.9f * alpha
             );
         });
 
@@ -413,14 +388,6 @@ public final class StormWallRenderer {
         }
 
         teardownDebugRenderState();
-    }
-
-    private static float[] wireframeColor(int layerIndex, float shellAlpha) {
-        if (layerIndex == 0) {
-            return new float[] {0.95f, 0.92f, 0.2f, 0.9f};
-        }
-        float layerFade = 1.0f - layerIndex * 0.08f;
-        return new float[] {0.95f, 0.45f + layerIndex * 0.03f, 0.15f, 0.35f * layerFade * shellAlpha};
     }
 
     private static void appendShellWireframe(

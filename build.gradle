@@ -166,6 +166,14 @@ tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8' // Use the UTF-8 charset for Java compilation
 }
 
+tasks.register('previewStormWall', JavaExec) {
+    group = 'eyeofthestorm'
+    description = 'Bake storm wall Voronoi preview PNGs + morph GIF (same code as the game)'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'com.eyeofthestorm.client.StormWallPreviewMain'
+    workingDir = layout.projectDirectory
+}
+
 // IDEA no longer automatically downloads sources/javadoc jars for dependencies, so we need to explicitly enable the behavior.
 idea {
     module {

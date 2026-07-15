@@ -9,8 +9,10 @@ uniform mat4 ProjMat;
 
 out vec2 texCoord0;
 out vec4 vertexColor;
+out vec3 viewPosition;
 
 void main() {
+    viewPosition = Position;
     gl_Position = ProjMat * ModelViewMat * vec4(Position, 1.0);
     texCoord0 = UV0;
     vertexColor = Color;
