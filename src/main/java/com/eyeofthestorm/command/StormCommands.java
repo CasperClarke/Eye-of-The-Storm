@@ -60,6 +60,7 @@ public final class StormCommands {
                 .then(Commands.literal("resume").executes(StormCommands::resume))
                 .then(Commands.literal("status").executes(StormCommands::status))
                 .then(Commands.literal("give_compass").executes(StormCommands::giveCompass))
+                .then(Commands.literal("give_map").executes(StormCommands::giveMap))
                 .then(Commands.literal("toggle_immunity").executes(StormCommands::toggleImmunity))
                 .then(Commands.literal("help").executes(StormCommands::help))
         );
@@ -172,6 +173,16 @@ public final class StormCommands {
         return 1;
     }
 
+    private static int giveMap(CommandContext<CommandSourceStack> ctx) {
+        ServerPlayer player = ctx.getSource().getPlayer();
+        if (player == null) {
+            return 0;
+        }
+        player.addItem(new ItemStack(ModItems.STORM_MAP.get()));
+        ctx.getSource().sendSuccess(() -> Component.literal("Storm Map granted."), false);
+        return 1;
+    }
+
     private static int giveCompass(CommandContext<CommandSourceStack> ctx) {
         ServerPlayer player = ctx.getSource().getPlayer();
         if (player == null) {
@@ -208,7 +219,7 @@ public final class StormCommands {
                 /storm init_here | init <x> <y> <z>
                 /storm teleport <x> <y> <z>
                 /storm set_radius <r> | set_speed <blocks/tick> | set_turn_rate <rad/tick> | set_damage <hp/block>
-                /storm pause | resume | status | give_compass | toggle_immunity
+                /storm pause | resume | status | give_compass | give_map | toggle_immunity
                 """), false);
         return 1;
     }

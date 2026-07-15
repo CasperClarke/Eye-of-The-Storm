@@ -4,16 +4,16 @@ import com.eyeofthestorm.EyeOfTheStormMod;
 import com.eyeofthestorm.StormConfig;
 import com.eyeofthestorm.storm.StormBoundaryMath;
 import com.mojang.blaze3d.platform.GlStateManager;
+import com.mojang.blaze3d.shaders.FogShape;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.BufferBuilder;
 import com.mojang.blaze3d.vertex.BufferUploader;
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import com.mojang.blaze3d.vertex.Tesselator;
 import com.mojang.blaze3d.vertex.VertexFormat;
-import net.minecraft.Util;
+import com.mojang.blaze3d.vertex.VertexSorting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.GameRenderer;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.Mth;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
@@ -21,25 +21,33 @@ import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
+import org.joml.Matrix4f;
+import org.joml.Matrix4fStack;
 
 /**
- * Storm wall as stacked translucent cylinder shells — same pipeline as
- * vanilla {@code LevelRenderer.renderWorldBorder}, with standard alpha blend
- * in the fade band so sky pixels are not blown out.
+ * Storm wall as densely stacked concentric cylinder shells tinted to a solid color.
+ * 16-block vertical bands for render-distance fog culling; top cap fades near wallTopY.
  */
 @EventBusSubscriber(modid = EyeOfTheStormMod.MOD_ID, value = Dist.CLIENT)
 public final class StormWallRenderer {
-    private static final ResourceLocation FORCEFIELD =
-            ResourceLocation.withDefaultNamespace("textures/misc/forcefield.png");
-
-    private static final int FADE_SHELLS = 28;
-    private static final int MIN_CYLINDER_SEGMENTS = 128;
+    private static final double SOLID_BAND_HEIGHT = 16.0;
+    private static final int DEBUG_WIRE_SEGMENTS = 32;
+    private static float cachedFogStart;
+    private static float cachedFogEnd;
+    private static FogShape cachedFogShape;
 
     private StormWallRenderer() {}
 
     @SubscribeEvent
     public static void onRender(RenderLevelStageEvent event) {
-        if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_WEATHER) {
+        // Soft shader always. Iris skips unknown shaders only while the world pass
+        // is active; AFTER_LEVEL is after Iris composite/final, so the soft program
+        // can blend onto the finished frame without reverting to discard shaders.
+        boolean irisPack = IrisCompat.isShaderPackInUse();
+        RenderLevelStageEvent.Stage expected = irisPack
+                ? RenderLevelStageEvent.Stage.AFTER_LEVEL
+                : RenderLevelStageEvent.Stage.AFTER_WEATHER;
+        if (event.getStage() != expected) {
             return;
         }
         if (!ClientStormState.shouldRender()) {
@@ -51,88 +59,148 @@ public final class StormWallRenderer {
             return;
         }
 
+        if (StormWallShader.get() == null) {
+            return;
+        }
+
         Vec3 cam = event.getCamera().getPosition();
         double cx = ClientStormState.centerX;
         double cz = ClientStormState.centerZ;
         double radius = ClientStormState.radius;
 
-        double d0 = mc.options.getEffectiveRenderDistance() * 16.0;
-        double distToCenter = Math.hypot(cam.x - cx, cam.z - cz);
-        double distToWall = Math.abs(distToCenter - radius);
-        boolean insideEye = distToCenter <= radius;
-
-        if (!insideEye && distToWall >= d0) {
-            return;
-        }
-
-        double proximity = 1.0 - distToWall / d0;
-        proximity = Math.pow(proximity, 4.0);
-        proximity = Mth.clamp(proximity, 0.0, 1.0);
-        if (insideEye) {
-            proximity = Math.max(proximity, 0.85);
-        }
-
-        double d4 = mc.gameRenderer.getDepthFar();
-        double viewWorldMin = cam.y - d4;
-        double viewWorldMax = Math.min(cam.y + d4, StormConfig.wallTopY);
-        if (viewWorldMax <= viewWorldMin + 0.5) {
-            return;
-        }
-
-        float proximityAlpha = (float) proximity;
         float r = StormConfig.wallColorR / 255f;
         float g = StormConfig.wallColorG / 255f;
         float b = StormConfig.wallColorB / 255f;
 
-        float scroll = (float) (Util.getMillis() % 3000L) / 3000.0F;
-        float vBase = (float) (-Mth.frac(cam.y * 0.5));
-
-        setupRenderState();
-
-        double solidTop = Math.min(viewWorldMax, StormConfig.wallFadeStartY);
-        if (solidTop > viewWorldMin + 0.5) {
-            drawShell(
-                    cx, cz, radius, cam, d0, insideEye, d4, scroll, vBase,
-                    viewWorldMin, solidTop,
-                    proximityAlpha * StormConfig.wallPeakAlpha,
-                    r, g, b
-            );
+        if (irisPack) {
+            // Composite wrote the final image here; draw soft wall on top of it.
+            mc.getMainRenderTarget().bindWrite(false);
         }
 
-        double fadeSpan = StormConfig.wallTopY - StormConfig.wallFadeStartY;
-        if (fadeSpan > 0.5 && viewWorldMax > StormConfig.wallFadeStartY) {
-            for (int shell = 0; shell < FADE_SHELLS; shell++) {
-                double t0 = shell / (double) FADE_SHELLS;
-                double t1 = (shell + 1) / (double) FADE_SHELLS;
+        // Iris final pass leaves HUD/identity matrices. Vertices are camera-relative,
+        // so restore the world view + projection from this event or the wall sticks to the camera.
+        Matrix4fStack modelViewStack = RenderSystem.getModelViewStack();
+        modelViewStack.pushMatrix();
+        modelViewStack.identity();
+        modelViewStack.mul(event.getModelViewMatrix());
+        RenderSystem.applyModelViewMatrix();
+        Matrix4f previousProjection = new Matrix4f(RenderSystem.getProjectionMatrix());
+        RenderSystem.setProjectionMatrix(event.getProjectionMatrix(), VertexSorting.DISTANCE_TO_ORIGIN);
 
-                double wy0 = StormConfig.wallFadeStartY + fadeSpan * t0;
-                double wy1 = StormConfig.wallFadeStartY + fadeSpan * t1;
+        setupRenderState(r, g, b);
+        ensureTexturesRegistered();
+        cacheFogState(mc);
 
-                if (wy1 <= viewWorldMin || wy0 >= viewWorldMax) {
-                    continue;
-                }
+        double depthFar = mc.gameRenderer.getDepthFar();
+        double viewWorldMin = Math.max(mc.level.getMinBuildHeight(), cam.y - depthFar);
+        double viewWorldMax = Math.min(StormConfig.wallTopY, cam.y + depthFar);
+        if (viewWorldMax <= viewWorldMin) {
+            teardownRenderState();
+            restoreMatrices(modelViewStack, previousProjection);
+            return;
+        }
 
-                wy0 = Math.max(wy0, viewWorldMin);
-                wy1 = Math.min(wy1, viewWorldMax);
-                if (wy1 <= wy0 + 0.1) {
-                    continue;
-                }
-
-                float shellAlpha = shellAlpha(shell, proximityAlpha);
-                if (shellAlpha < 0.02f) {
-                    continue;
-                }
-
-                drawShell(
-                        cx, cz, radius, cam, d0, insideEye, d4, scroll, vBase,
-                        wy0, wy1,
-                        shellAlpha,
-                        r, g, b
-                );
-            }
+        int layerCount = Math.max(1, StormConfig.wallLayerCount);
+        for (int layer = layerCount - 1; layer >= 0; layer--) {
+            double layerRadius = StormConfig.shellRadius(radius, layer);
+            drawLayer(cx, cz, layerRadius, layer, cam, viewWorldMin, viewWorldMax, r, g, b);
         }
 
         teardownRenderState();
+        restoreMatrices(modelViewStack, previousProjection);
+
+        if (StormDebugState.wireframeEnabled) {
+            drawDebugWireframe(cx, cz, radius, cam, viewWorldMin, viewWorldMax);
+        }
+    }
+
+    private static void restoreMatrices(Matrix4fStack modelViewStack, Matrix4f previousProjection) {
+        modelViewStack.popMatrix();
+        RenderSystem.applyModelViewMatrix();
+        RenderSystem.setProjectionMatrix(previousProjection, VertexSorting.DISTANCE_TO_ORIGIN);
+    }
+
+    /** One draw call per layer; per-vertex fog alpha interpolates across each quad. */
+    private static void drawLayer(
+            double cx,
+            double cz,
+            double layerRadius,
+            int layerIndex,
+            Vec3 cam,
+            double viewWorldMin,
+            double viewWorldMax,
+            float r,
+            float g,
+            float b
+    ) {
+        BufferBuilder buffer = Tesselator.getInstance().begin(
+                VertexFormat.Mode.QUADS,
+                DefaultVertexFormat.POSITION_TEX_COLOR
+        );
+        forEachShellAtRadius(viewWorldMin, viewWorldMax, (wy0, wy1) -> {
+            float yCam0 = (float) (wy0 - cam.y);
+            float yCam1 = (float) (wy1 - cam.y);
+            appendCylinderRing(buffer, cx, cz, layerRadius, cam, wy0, wy1, yCam0, yCam1);
+        });
+
+        var mesh = buffer.build();
+        if (mesh != null) {
+            RenderSystem.setShaderTexture(0, StormWallTextures.forLayer(layerIndex));
+            RenderSystem.setShaderColor(r, g, b, 1.0F);
+            BufferUploader.drawWithShader(mesh);
+        }
+    }
+
+    @FunctionalInterface
+    private interface ShellSliceVisitor {
+        void accept(double worldY0, double worldY1);
+    }
+
+    @FunctionalInterface
+    private interface RenderedShellVisitor {
+        void accept(int layerIndex, double shellRadius, double worldY0, double worldY1, float alpha);
+    }
+
+    /** 16-block bands from view min to wall top; fog culls distant bands per vertex. */
+    private static void forEachShellAtRadius(
+            double viewWorldMin,
+            double viewWorldMax,
+            ShellSliceVisitor visitor
+    ) {
+        double wallTop = Math.min(StormConfig.wallTopY, viewWorldMax);
+        if (wallTop <= viewWorldMin) {
+            return;
+        }
+
+        for (double bandBottom = viewWorldMin; bandBottom < wallTop; bandBottom += SOLID_BAND_HEIGHT) {
+            double bandTop = Math.min(bandBottom + SOLID_BAND_HEIGHT, wallTop);
+            visitor.accept(bandBottom, bandTop);
+        }
+    }
+
+    private static void ensureTexturesRegistered() {
+        if (!StormWallTextures.isRegistered()) {
+            StormWallTextures.register();
+        }
+    }
+
+    /** Same shell slices as the wall renderer (layers and 16-block bands). */
+    private static void forEachRenderedShell(
+            double baseRadius,
+            double viewWorldMin,
+            double viewWorldMax,
+            RenderedShellVisitor visitor
+    ) {
+        int layerCount = Math.max(1, StormConfig.wallLayerCount);
+
+        for (int layer = 0; layer < layerCount; layer++) {
+            double shellRadius = StormConfig.shellRadius(baseRadius, layer);
+            int layerIndex = layer;
+            forEachShellAtRadius(viewWorldMin, viewWorldMax, (wy0, wy1) -> {
+                float midY = (float) ((wy0 + wy1) * 0.5);
+                visitor.accept(layerIndex, shellRadius, wy0, wy1, topCapAlpha(midY));
+            });
+        }
     }
 
     static float outsideGap(net.minecraft.world.phys.Vec3 position) {
@@ -159,77 +227,34 @@ public final class StormWallRenderer {
         ));
     }
 
-    private static float shellAlpha(int shellIndex, float proximityAlpha) {
-        double fadeSpan = StormConfig.wallTopY - StormConfig.wallFadeStartY;
-        float worldY = (float) (StormConfig.wallFadeStartY + fadeSpan * (shellIndex + 0.5) / FADE_SHELLS);
-        return proximityAlpha * verticalAlpha(worldY);
-    }
-
-    private static float verticalAlpha(float worldY) {
+    /** Full opacity below the top fade band; smooth falloff to zero at wallTopY. */
+    private static float topCapAlpha(float worldY) {
         if (worldY >= StormConfig.wallTopY) {
             return 0f;
         }
-        if (worldY <= StormConfig.wallFadeStartY) {
+        float fadeStart = StormConfig.wallTopY - StormConfig.wallTopFadeBlocks;
+        if (worldY <= fadeStart) {
             return StormConfig.wallPeakAlpha;
         }
-        float t = (worldY - StormConfig.wallFadeStartY)
-                / Math.max(1f, StormConfig.wallTopY - StormConfig.wallFadeStartY);
+        float t = (worldY - fadeStart) / Math.max(1f, StormConfig.wallTopFadeBlocks);
         float smooth = t * t * (3f - 2f * t);
         return StormConfig.wallPeakAlpha * (1f - smooth);
     }
 
-    private static void drawShell(
-            double cx,
-            double cz,
-            double radius,
-            Vec3 cam,
-            double viewRange,
-            boolean insideEye,
-            double depthFar,
-            float scroll,
-            float vBase,
-            double worldY0,
-            double worldY1,
-            float alpha,
-            float r,
-            float g,
-            float b
-    ) {
-        float yCam0 = (float) (worldY0 - cam.y);
-        float yCam1 = (float) (worldY1 - cam.y);
-        float uv0 = uvForCamY(yCam0, scroll, vBase, depthFar);
-        float uv1 = uvForCamY(yCam1, scroll, vBase, depthFar);
-
-        RenderSystem.setShaderColor(r, g, b, alpha);
-
-        BufferBuilder buffer = Tesselator.getInstance().begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_TEX);
-        appendCylinderRing(
-                buffer,
-                cx,
-                cz,
-                radius,
-                cam.x,
-                cam.z,
-                viewRange,
-                insideEye,
-                scroll,
-                uv1,
-                uv0,
-                yCam0,
-                yCam1
-        );
-
-        var mesh = buffer.build();
-        if (mesh != null) {
-            BufferUploader.drawWithShader(mesh);
-        }
+    private static float vertexAlpha(float worldY, float x, float y, float z) {
+        return topCapAlpha(worldY) * vanillaFogFade(x, y, z);
     }
 
-    private static float uvForCamY(float yCam, float scroll, float vBase, double depthFar) {
-        return scroll + vBase + (float) ((depthFar - yCam) * 0.5);
+    /** Match {@link net.minecraft.client.renderer.FogRenderer} terrain fog range. */
+    private static void cacheFogState(Minecraft mc) {
+        float renderReach = Math.max(32.0F, mc.gameRenderer.getRenderDistance());
+        float span = Mth.clamp(renderReach / 10.0F, 4.0F, 64.0F);
+        cachedFogEnd = renderReach;
+        cachedFogStart = renderReach - span;
+        cachedFogShape = FogShape.CYLINDER;
     }
 
-    private static void setupRenderState() {
+    private static void setupRenderState(float r, float g, float b) {
         RenderSystem.enableBlend();
         RenderSystem.enableDepthTest();
         RenderSystem.blendFuncSeparate(
@@ -238,9 +263,11 @@ public final class StormWallRenderer {
                 GlStateManager.SourceFactor.ONE,
                 GlStateManager.DestFactor.ZERO
         );
-        RenderSystem.setShaderTexture(0, FORCEFIELD);
-        RenderSystem.depthMask(Minecraft.useShaderTransparency());
-        RenderSystem.setShader(GameRenderer::getPositionTexShader);
+        RenderSystem.setShaderTexture(0, StormWallTextures.ORGANIC);
+        RenderSystem.depthMask(false);
+        // Soft alpha (no discard). Safe under Iris when drawn at AFTER_LEVEL.
+        RenderSystem.setShader(StormWallShader::get);
+        RenderSystem.setShaderColor(r, g, b, 1.0F);
         RenderSystem.polygonOffset(-3.0F, -3.0F);
         RenderSystem.enablePolygonOffset();
         RenderSystem.disableCull();
@@ -261,52 +288,211 @@ public final class StormWallRenderer {
             double cx,
             double cz,
             double radius,
-            double camX,
-            double camZ,
-            double viewRange,
-            boolean insideEye,
-            float scroll,
-            float uvTop,
-            float uvBottom,
+            Vec3 cam,
+            double worldYBottom,
+            double worldYTop,
             float yBottom,
             float yTop
     ) {
+        double camX = cam.x;
+        double camZ = cam.z;
+        int segments = segmentCount(radius);
+        double blockSize = Math.max(1.0, StormConfig.wallTextureBlockSize);
+
         double circumference = Math.PI * 2.0 * radius;
-        int segments = Math.max(MIN_CYLINDER_SEGMENTS, (int) Math.ceil(circumference));
-        // World border uses 0.5 UV per block; forcefield tiles every 1.0 UV.
-        // Snap total wraps to an integer tile count so 0 and 2π share the same texture phase.
-        float tilesAround = Math.max(1f, Math.round((float) (circumference * 0.5)));
-        float uvPerRadian = tilesAround / (float) (Math.PI * 2.0);
+        double repeatsAround = Math.max(1.0, Math.round(circumference / blockSize));
+        double vBottom = worldYBottom / blockSize;
+        double vTop = worldYTop / blockSize;
 
         for (int i = 0; i < segments; i++) {
-            double a0 = Math.PI * 2.0 * i / segments;
-            double a1 = Math.PI * 2.0 * (i + 1) / segments;
+            double t0 = (double) i / segments;
+            double t1 = (double) (i + 1) / segments;
+            double a0 = Math.PI * 2.0 * t0;
+            double a1 = Math.PI * 2.0 * t1;
 
             double wx0 = cx + Math.sin(a0) * radius;
             double wz0 = cz + Math.cos(a0) * radius;
             double wx1 = cx + Math.sin(a1) * radius;
             double wz1 = cz + Math.cos(a1) * radius;
 
-            if (!insideEye) {
-                double midX = (wx0 + wx1) * 0.5;
-                double midZ = (wz0 + wz1) * 0.5;
-                if (Math.hypot(midX - camX, midZ - camZ) > viewRange + 32.0) {
-                    continue;
-                }
-            }
+            float rx0 = (float) (wx0 - camX);
+            float rz0 = (float) (wz0 - camZ);
+            float rx1 = (float) (wx1 - camX);
+            float rz1 = (float) (wz1 - camZ);
+
+            float u0 = (float) (t0 * repeatsAround);
+            float u1 = (float) (t1 * repeatsAround);
+            float vf = (float) vBottom;
+            float vt = (float) vTop;
+
+            float fog00 = vertexAlpha((float) worldYBottom, rx0, yBottom, rz0);
+            float fog01 = vertexAlpha((float) worldYTop, rx0, yTop, rz0);
+            float fog11 = vertexAlpha((float) worldYTop, rx1, yTop, rz1);
+            float fog10 = vertexAlpha((float) worldYBottom, rx1, yBottom, rz1);
+
+            addVertex(buffer, rx0, yBottom, rz0, u0, vf, fog00);
+            addVertex(buffer, rx0, yTop, rz0, u0, vt, fog01);
+            addVertex(buffer, rx1, yTop, rz1, u1, vt, fog11);
+            addVertex(buffer, rx1, yBottom, rz1, u1, vf, fog10);
+        }
+    }
+
+    private static void addVertex(
+            BufferBuilder buffer,
+            float x,
+            float y,
+            float z,
+            float u,
+            float v,
+            float fogAlpha
+    ) {
+        int a = Mth.clamp((int) (fogAlpha * 255.0f + 0.5f), 0, 255);
+        buffer.addVertex(x, y, z)
+                .setUv(u, v)
+                .setColor(255, 255, 255, a);
+    }
+
+    /** Smooth fog falloff; extends slightly past fog end so quads fade out instead of clipping. */
+    private static float vanillaFogFade(float x, float y, float z) {
+        float distance;
+        if (cachedFogShape == FogShape.CYLINDER) {
+            distance = Math.max((float) Math.hypot(x, z), Math.abs(y));
+        } else {
+            distance = (float) Math.sqrt(x * x + y * y + z * z);
+        }
+
+        float span = cachedFogEnd - cachedFogStart;
+        if (span <= 0.001f) {
+            return distance <= cachedFogEnd ? 1.0F : 0.0F;
+        }
+
+        float fadeStart = cachedFogStart;
+        float fadeEnd = cachedFogEnd + span * 0.25F;
+
+        if (distance <= fadeStart) {
+            return 1.0F;
+        }
+        if (distance >= fadeEnd) {
+            return 0.0F;
+        }
+
+        float t = (distance - fadeStart) / (fadeEnd - fadeStart);
+        return 1.0F - t * t * (3.0F - 2.0F * t);
+    }
+
+    private static int segmentCount(double radius) {
+        return Math.max(8, StormConfig.wallSegments);
+    }
+
+    private static void drawDebugWireframe(
+            double cx,
+            double cz,
+            double baseRadius,
+            Vec3 cam,
+            double viewWorldMin,
+            double viewWorldMax
+    ) {
+        setupDebugRenderState();
+
+        BufferBuilder buffer = Tesselator.getInstance().begin(
+                VertexFormat.Mode.DEBUG_LINES,
+                DefaultVertexFormat.POSITION_COLOR
+        );
+
+        forEachRenderedShell(baseRadius, viewWorldMin, viewWorldMax, (layer, shellRadius, wy0, wy1, alpha) -> {
+            float[] color = wireframeColor(layer, alpha);
+            appendShellWireframe(
+                    buffer, cx, cz, shellRadius, cam, wy0, wy1,
+                    color[0], color[1], color[2], color[3]
+            );
+        });
+
+        var mesh = buffer.build();
+        if (mesh != null) {
+            BufferUploader.drawWithShader(mesh);
+        }
+
+        teardownDebugRenderState();
+    }
+
+    private static float[] wireframeColor(int layerIndex, float shellAlpha) {
+        if (layerIndex == 0) {
+            return new float[] {0.95f, 0.92f, 0.2f, 0.9f};
+        }
+        float layerFade = 1.0f - layerIndex * 0.08f;
+        return new float[] {0.95f, 0.45f + layerIndex * 0.03f, 0.15f, 0.35f * layerFade * shellAlpha};
+    }
+
+    private static void appendShellWireframe(
+            BufferBuilder buffer,
+            double cx,
+            double cz,
+            double radius,
+            Vec3 cam,
+            double worldY0,
+            double worldY1,
+            float cr,
+            float cg,
+            float cb,
+            float ca
+    ) {
+        double camX = cam.x;
+        double camY = cam.y;
+        double camZ = cam.z;
+        float y0 = (float) (worldY0 - camY);
+        float y1 = (float) (worldY1 - camY);
+
+        for (int i = 0; i < DEBUG_WIRE_SEGMENTS; i++) {
+            double a0 = Math.PI * 2.0 * i / DEBUG_WIRE_SEGMENTS;
+            double a1 = Math.PI * 2.0 * (i + 1) / DEBUG_WIRE_SEGMENTS;
+
+            double wx0 = cx + Math.sin(a0) * radius;
+            double wz0 = cz + Math.cos(a0) * radius;
+            double wx1 = cx + Math.sin(a1) * radius;
+            double wz1 = cz + Math.cos(a1) * radius;
 
             float rx0 = (float) (wx0 - camX);
             float rz0 = (float) (wz0 - camZ);
             float rx1 = (float) (wx1 - camX);
             float rz1 = (float) (wz1 - camZ);
 
-            float u0 = scroll - (float) a0 * uvPerRadian;
-            float u1 = scroll - (float) a1 * uvPerRadian;
-
-            buffer.addVertex(rx0, yBottom, rz0).setUv(u0, uvBottom);
-            buffer.addVertex(rx0, yTop, rz0).setUv(u0, uvTop);
-            buffer.addVertex(rx1, yTop, rz1).setUv(u1, uvTop);
-            buffer.addVertex(rx1, yBottom, rz1).setUv(u1, uvBottom);
+            addDebugLine(buffer, rx0, y0, rz0, rx1, y0, rz1, cr, cg, cb, ca);
+            addDebugLine(buffer, rx0, y1, rz0, rx1, y1, rz1, cr, cg, cb, ca);
+            addDebugLine(buffer, rx0, y0, rz0, rx0, y1, rz0, cr, cg, cb, ca);
         }
+    }
+
+    private static void setupDebugRenderState() {
+        RenderSystem.enableBlend();
+        RenderSystem.defaultBlendFunc();
+        RenderSystem.enableDepthTest();
+        RenderSystem.depthMask(false);
+        RenderSystem.disableCull();
+        RenderSystem.setShader(GameRenderer::getPositionColorShader);
+        RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
+    }
+
+    private static void teardownDebugRenderState() {
+        RenderSystem.enableCull();
+        RenderSystem.depthMask(true);
+        RenderSystem.disableBlend();
+        RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
+    }
+
+    private static void addDebugLine(
+            BufferBuilder buffer,
+            float x0,
+            float y0,
+            float z0,
+            float x1,
+            float y1,
+            float z1,
+            float r,
+            float g,
+            float b,
+            float a
+    ) {
+        buffer.addVertex(x0, y0, z0).setColor(r, g, b, a);
+        buffer.addVertex(x1, y1, z1).setColor(r, g, b, a);
     }
 }

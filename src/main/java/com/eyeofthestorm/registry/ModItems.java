@@ -2,6 +2,7 @@ package com.eyeofthestorm.registry;
 
 import com.eyeofthestorm.EyeOfTheStormMod;
 import com.eyeofthestorm.item.StormCompassItem;
+import com.eyeofthestorm.item.StormMapItem;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.CreativeModeTab;
@@ -18,11 +19,17 @@ public final class ModItems {
     public static final DeferredItem<StormCompassItem> STORM_COMPASS = ITEMS.register("storm_compass",
             () -> new StormCompassItem(new Item.Properties().stacksTo(1)));
 
+    public static final DeferredItem<StormMapItem> STORM_MAP = ITEMS.register("storm_map",
+            () -> new StormMapItem(new Item.Properties().stacksTo(1)));
+
     public static final net.neoforged.neoforge.registries.DeferredHolder<CreativeModeTab, CreativeModeTab> TAB = TABS.register("main",
             () -> CreativeModeTab.builder()
                     .title(Component.translatable("itemGroup.eyeofthestorm"))
                     .icon(() -> STORM_COMPASS.get().getDefaultInstance())
-                    .displayItems((params, out) -> out.accept(STORM_COMPASS.get()))
+                    .displayItems((params, out) -> {
+                        out.accept(STORM_COMPASS.get());
+                        out.accept(STORM_MAP.get());
+                    })
                     .build());
 
     private ModItems() {}

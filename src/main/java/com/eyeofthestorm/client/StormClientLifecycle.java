@@ -15,6 +15,9 @@ public final class StormClientLifecycle {
     public static void onLevelUnload(LevelEvent.Unload event) {
         if (event.getLevel().isClientSide()) {
             ClientStormState.reset();
+            StormRadarState.reset();
+            StormDebugState.reset();
+            StormPathHistory.reset();
         }
     }
 }

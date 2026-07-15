@@ -21,7 +21,9 @@ public final class ClientSetup {
 
     @SubscribeEvent
     public static void onClientSetup(FMLClientSetupEvent event) {
-        event.enqueueWork(() -> ItemProperties.register(
+        event.enqueueWork(() -> {
+            StormWallTextures.register();
+            ItemProperties.register(
                 ModItems.STORM_COMPASS.get(),
                 ResourceLocation.withDefaultNamespace("angle"),
                 new CompassItemPropertyFunction((level, stack, entity) -> {
@@ -38,6 +40,8 @@ public final class ClientSetup {
                     LodestoneTracker tracker = stack.get(DataComponents.LODESTONE_TRACKER);
                     return tracker != null ? tracker.target().orElse(null) : null;
                 })
-        ));
+        );
+        });
     }
+
 }

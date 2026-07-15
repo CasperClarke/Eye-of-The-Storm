@@ -1,4 +1,14 @@
 {
   "item.eyeofthestorm.storm_compass": "Storm Compass",
-  "itemGroup.eyeofthestorm": "Eye of the Storm"
+  "item.eyeofthestorm.storm_map": "Storm Map",
+  "itemGroup.eyeofthestorm": "Eye of the Storm",
+  "key.categories.eyeofthestorm": "Eye of the Storm",
+  "key.eyeofthestorm.toggle_radar": "Toggle Storm Radar",
+  "key.eyeofthestorm.toggle_debug_wall": "Toggle Storm Wall Debug",
+  "message.eyeofthestorm.radar_on": "Storm radar enabled",
+  "message.eyeofthestorm.radar_off": "Storm radar disabled",
+  "message.eyeofthestorm.debug_wall_on": "Storm wall debug wireframe enabled",
+  "message.eyeofthestorm.debug_wall_off": "Storm wall debug wireframe disabled",
+  "config.eyeofthestorm.radar.center_indicator": "Center indicator",
+  "config.eyeofthestorm.radar.trail_duration_seconds": "Trail duration (seconds)"
 }
