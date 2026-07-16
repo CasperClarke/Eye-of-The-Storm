@@ -11,18 +11,21 @@ import org.jetbrains.annotations.Nullable;
 import java.io.IOException;
 
 /**
- * Copies the main scene depth buffer so the wall shader can highlight
- * where the membrane intersects opaque geometry (terrain, caves, etc.).
+ * Copies scene depth so the wall shader can highlight membrane contact.
+ * Captured after clouds (AFTER_WEATHER) so Fancy clouds in the main target are included.
+ * On Fabulous, clouds use a separate target — that depth is exposed via {@link #cloudTexture()}.
  */
 public final class StormWallContactDepth {
     @Nullable
     private static RenderTarget depthCopy;
     private static final DepthTexture DEPTH_VIEW = new DepthTexture();
+    private static final DepthTexture CLOUD_DEPTH_VIEW = new DepthTexture();
     private static boolean capturedThisFrame;
+    private static boolean cloudDepthAvailable;
 
     private StormWallContactDepth() {}
 
-    /** Call once per frame after opaque/particle world depth is filled. */
+    /** Call once per frame after clouds have been rendered (AFTER_WEATHER). */
     public static void capture(Minecraft mc) {
         RenderTarget main = mc.getMainRenderTarget();
         ensureSize(main.width, main.height);
@@ -30,6 +33,16 @@ public final class StormWallContactDepth {
         DEPTH_VIEW.setGlId(depthCopy.getDepthTextureId());
         // copyDepthFrom leaves FBO 0 bound — restore the game's main target.
         main.bindWrite(false);
+
+        cloudDepthAvailable = false;
+        CLOUD_DEPTH_VIEW.setGlId(-1);
+        // Fabulous draws clouds into a separate target; Fancy writes them into main already.
+        RenderTarget clouds = mc.levelRenderer.getCloudsTarget();
+        if (clouds != null && clouds.useDepth) {
+            CLOUD_DEPTH_VIEW.setGlId(clouds.getDepthTextureId());
+            cloudDepthAvailable = CLOUD_DEPTH_VIEW.hasGlId();
+        }
+
         capturedThisFrame = true;
     }
 
@@ -37,8 +50,17 @@ public final class StormWallContactDepth {
         return capturedThisFrame && depthCopy != null && DEPTH_VIEW.hasGlId();
     }
 
+    /** Fabulous-only separate cloud depth; Fancy clouds are already in {@link #texture()}. */
+    public static boolean hasCloudCapture() {
+        return hasCapture() && cloudDepthAvailable;
+    }
+
     public static AbstractTexture texture() {
         return DEPTH_VIEW;
+    }
+
+    public static AbstractTexture cloudTexture() {
+        return CLOUD_DEPTH_VIEW;
     }
 
     public static int width() {

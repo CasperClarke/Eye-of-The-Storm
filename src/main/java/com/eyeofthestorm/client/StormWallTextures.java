@@ -83,6 +83,16 @@ public final class StormWallTextures {
             shader.setSampler("Sampler1", atlas);
         }
 
+        boolean cloudContact = StormWallContactDepth.hasCloudCapture();
+        if (cloudContact) {
+            AbstractTexture cloudDepth = StormWallContactDepth.cloudTexture();
+            RenderSystem.setShaderTexture(2, cloudDepth.getId());
+            shader.setSampler("Sampler2", cloudDepth);
+        } else {
+            RenderSystem.setShaderTexture(2, MORPH_ATLAS);
+            shader.setSampler("Sampler2", atlas);
+        }
+
         var morphCycle = shader.getUniform("MorphCycle");
         if (morphCycle != null) {
             // Seconds; storm_wall.fsh converts via GameTime * (1200 / MorphCycle).
@@ -124,6 +134,10 @@ public final class StormWallTextures {
         var contactEnabled = shader.getUniform("ContactEnabled");
         if (contactEnabled != null) {
             contactEnabled.set(contact ? 1.0f : 0.0f);
+        }
+        var cloudContactEnabled = shader.getUniform("CloudContactEnabled");
+        if (cloudContactEnabled != null) {
+            cloudContactEnabled.set(cloudContact ? 1.0f : 0.0f);
         }
     }
 

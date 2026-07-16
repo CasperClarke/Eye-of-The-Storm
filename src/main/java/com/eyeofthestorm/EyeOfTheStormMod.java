@@ -3,6 +3,8 @@ package com.eyeofthestorm;
 import com.eyeofthestorm.command.StormCommands;
 import com.eyeofthestorm.client.ClientConfigScreenRegistration;
 import com.eyeofthestorm.client.StormRadarConfig;
+import com.eyeofthestorm.network.ApplyStormPathPreviewPayload;
+import com.eyeofthestorm.network.OpenStormPathPreviewPayload;
 import com.eyeofthestorm.network.StormSyncPayload;
 import com.eyeofthestorm.registry.ModItems;
 import com.eyeofthestorm.storm.StormEvents;
@@ -28,6 +30,8 @@ public class EyeOfTheStormMod {
         }
         ModItems.register(modBus);
         StormSyncPayload.register(modBus);
+        OpenStormPathPreviewPayload.register(modBus);
+        ApplyStormPathPreviewPayload.register(modBus);
         NeoForge.EVENT_BUS.register(StormEvents.class);
         NeoForge.EVENT_BUS.register(StormCommands.class);
         LOGGER.info("Eye of the Storm mod ready (full simulation + client wall/vignette)");

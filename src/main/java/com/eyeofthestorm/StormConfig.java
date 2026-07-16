@@ -10,12 +10,44 @@ public final class StormConfig {
 
     /** Blocks outside the wall before storm damage begins (vanilla border safe zone). */
     public static float damageSafeZone = 5f;
-    public static double defaultRadius = 100.0;
-    public static double defaultSpeed = 0.05;
-    /** Random-walk steering noise added to angular velocity each tick (radians/tick). */
-    public static double turnRate = 0.0025;
-    public static double maxAngularVelocity = 0.04;
-    public static double angularDamping = 0.98;
+    public static double defaultRadius = 1000.0;
+
+    /**
+     * Default campaign tuning: cover roughly this much path length in this many hours.
+     * Instantaneous speed is {@code peak · ((1-cos(u-0.5))/2)^2}; that scale averages to 3/8,
+     * so peak is chosen as {@code distance / (meanScale · ticks)}.
+     */
+    public static final double TARGET_PATH_BLOCKS = 2_000_000.0;
+    public static final double TARGET_DURATION_HOURS = 100.0;
+    /** Mean of {@code ((1-cos(u-0.5))/2)^2} over one period. */
+    public static final double SPEED_SCALE_MEAN = 0.375;
+
+    /**
+     * Peak linear speed in blocks/tick (~0.741 → ~5.56 blocks/s average → 2M blocks / 100h).
+     * Per-storm override lives on {@code StormData.speed}.
+     */
+    public static double defaultSpeed =
+            TARGET_PATH_BLOCKS / (SPEED_SCALE_MEAN * TARGET_DURATION_HOURS * 3600.0 * 20.0);
+
+    /** How many epicycles to sample when generating a path. */
+    public static int pathCircleCount = 15;
+
+    /**
+     * Overall amplitude scale for harmonic radii {@code r_k = scale / k} (world blocks).
+     * With integer frequencies the shape closes every {@code 2π} in path parameter; loop arc
+     * length is computed from the live circles via {@code StormFourierPath.estimateLoopLength}.
+     * Keep that above {@link #TARGET_PATH_BLOCKS} so the storm does not lap during the campaign.
+     */
+    public static double pathRadiusScale = 170_000.0;
+
+    /**
+     * How fast the speed-function phase {@code u} advances per tick.
+     * Speed scale is {@code ((1-cos(u-0.5))/2)^2}; period is {@code 2π / rate} ticks (~30 minutes).
+     */
+    public static double speedPhaseRatePerTick = (Math.PI * 2.0) / (30.0 * 60.0 * 20.0);
+
+    /** Floor on |z'(t)| so parameter steps stay finite near cusps. */
+    public static double pathDerivEpsilon = 1e-4;
 
     /** World Y where the storm wall ends. */
     public static float wallTopY = 300f;

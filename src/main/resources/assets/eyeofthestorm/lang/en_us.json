@@ -5,6 +5,7 @@
   "key.categories.eyeofthestorm": "Eye of the Storm",
   "key.eyeofthestorm.toggle_radar": "Toggle Storm Radar",
   "key.eyeofthestorm.toggle_debug_wall": "Toggle Storm Wall Debug",
+  "screen.eyeofthestorm.path_preview": "Storm Path Preview",
   "message.eyeofthestorm.radar_on": "Storm radar enabled",
   "message.eyeofthestorm.radar_off": "Storm radar disabled",
   "message.eyeofthestorm.debug_wall_on": "Storm wall debug wireframe enabled",

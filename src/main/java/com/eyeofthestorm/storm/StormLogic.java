@@ -5,6 +5,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.util.Mth;
+import net.minecraft.util.RandomSource;
 import net.minecraft.world.phys.Vec3;
 
 /**
@@ -20,8 +21,13 @@ public final class StormLogic {
             return;
         }
 
+        // Upgrade legacy saves that still lack a Fourier path.
+        if (!data.hasPath()) {
+            regeneratePath(level.random, data, level.random.nextLong(), data.centerX, data.centerY, data.centerZ);
+        }
+
         data.ticksAlive++;
-        stepMotion(level, data);
+        stepMotion(data);
         data.wallSpinDeg = Mth.wrapDegrees(data.wallSpinDeg + 1.5f);
         data.setDirty();
 
@@ -37,17 +43,28 @@ public final class StormLogic {
         }
     }
 
-    /** Smooth random-walk angular velocity, then integrate position with doubles. */
-    private static void stepMotion(ServerLevel level, StormData data) {
-        data.angularVelocity += (level.random.nextDouble() * 2.0 - 1.0) * StormConfig.turnRate;
-        data.angularVelocity = Mth.clamp(data.angularVelocity, -StormConfig.maxAngularVelocity, StormConfig.maxAngularVelocity);
-        data.angularVelocity *= StormConfig.angularDamping;
-        data.yawRad += data.angularVelocity;
+    /**
+     * Advance path parameter so world-space travel equals {@code speed · s(u)} blocks this tick.
+     * That divides every circle's effective rotation rate by {|z'| / desired}, keeping shape fixed.
+     */
+    private static void stepMotion(StormData data) {
+        data.speedPhase += StormConfig.speedPhaseRatePerTick;
+        double scale = StormFourierPath.speedScale(data.speedPhase);
+        double desiredDistance = data.speed * scale;
+        if (desiredDistance <= 0.0 || !data.hasPath()) {
+            return;
+        }
 
-        Vec3 delta = data.forward().scale(data.speed);
-        data.centerX += delta.x;
-        data.centerZ += delta.z;
-        // Y stays where the storm was placed / teleported — no per-tick surface snapping
+        StormFourierPath.Vec2 deriv = StormFourierPath.derivative(data.circles, data.pathParam);
+        double mag = Math.max(deriv.length(), StormConfig.pathDerivEpsilon);
+        data.pathParam += desiredDistance / mag;
+
+        data.applyPathPosition();
+
+        StormFourierPath.Vec2 tangent = StormFourierPath.derivative(data.circles, data.pathParam);
+        if (tangent.length() > StormConfig.pathDerivEpsilon) {
+            data.yawRad = StormFourierPath.yawFromVelocity(tangent.x(), tangent.z());
+        }
     }
 
     /**
@@ -87,12 +104,59 @@ public final class StormLogic {
         data.paused = false;
         data.radius = StormConfig.defaultRadius;
         data.speed = StormConfig.defaultSpeed;
-        data.angularVelocity = 0.0;
-        data.yawRad = level.random.nextDouble() * Math.PI * 2.0;
         data.ticksAlive = 0;
-        data.setCenter(pos);
+        data.centerY = pos.y;
+        regeneratePath(level.random, data, level.random.nextLong(), pos.x, pos.y, pos.z);
         updateWorldSpawn(level, data);
         data.setDirty();
         StormEvents.syncToDimension(level, data);
+    }
+
+    public static void teleportTo(ServerLevel level, StormData data, Vec3 pos) {
+        data.centerY = pos.y;
+        data.rebasePathOriginTo(pos.x, pos.z);
+        data.applyPathPosition();
+        // Keep yaw from current tangent if possible
+        if (data.hasPath()) {
+            StormFourierPath.Vec2 tangent = StormFourierPath.derivative(data.circles, data.pathParam);
+            if (tangent.length() > StormConfig.pathDerivEpsilon) {
+                data.yawRad = StormFourierPath.yawFromVelocity(tangent.x(), tangent.z());
+            }
+        }
+        updateWorldSpawn(level, data);
+        data.setDirty();
+        StormEvents.syncToDimension(level, data);
+    }
+
+    /** Build a new sum-of-circles path anchored so the storm sits at {@code (x,y,z)}. */
+    public static void regeneratePath(
+            RandomSource random,
+            StormData data,
+            long seed,
+            double worldX,
+            double worldY,
+            double worldZ
+    ) {
+        RandomSource pathRandom = RandomSource.create(seed);
+        data.pathSeed = seed;
+        data.circles = StormFourierPath.generateDefault(pathRandom);
+        data.pathParam = 0.0;
+        data.speedPhase = StormFourierPath.initialSpeedPhase();
+        data.centerY = worldY;
+        data.rebasePathOriginTo(worldX, worldZ);
+        data.applyPathPosition();
+
+        StormFourierPath.Vec2 tangent = StormFourierPath.derivative(data.circles, data.pathParam);
+        if (tangent.length() > StormConfig.pathDerivEpsilon) {
+            data.yawRad = StormFourierPath.yawFromVelocity(tangent.x(), tangent.z());
+        } else {
+            data.yawRad = random.nextDouble() * Math.PI * 2.0;
+        }
+        data.setDirty();
+    }
+
+    /** Instantaneous linear speed this tick (blocks/tick), after the speed scale curve. */
+    public static double instantaneousSpeed(StormData data) {
+        return data.speed * StormFourierPath.speedScale(data.speedPhase);
     }
 }

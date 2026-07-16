@@ -2,6 +2,7 @@
 
 uniform sampler2D Sampler0;
 uniform sampler2D Sampler1;
+uniform sampler2D Sampler2;
 uniform vec4 ColorModulator;
 uniform float GameTime;
 uniform float MorphCycle;
@@ -13,6 +14,7 @@ uniform float FarPlane;
 uniform float ContactWidth;
 uniform float ContactStrength;
 uniform float ContactEnabled;
+uniform float CloudContactEnabled;
 
 in vec2 texCoord0;
 in vec4 vertexColor;
@@ -63,16 +65,22 @@ void main() {
     color.rgb *= mix(1.0, 0.30, fresnel);
     color.a *= mix(1.0, 1.75, fresnel);
 
-    // Soft contact rim: wall depth vs copied scene depth (terrain, caves, props).
+    // Soft contact rim: wall depth vs scene depth (terrain, caves, Fancy clouds).
+    // Fabulous clouds live in Sampler2 — take the closer eye depth.
+    // Scale by vertexColor.a so the rim follows the same fog / top-cap fade as the wall.
     if (ContactEnabled > 0.5) {
+        float visibility = clamp(vertexColor.a, 0.0, 1.0);
         vec2 screenUv = gl_FragCoord.xy / max(ScreenSize, vec2(1.0));
-        float sceneDepth = texture(Sampler1, screenUv).r;
+        float sceneEye = linearEyeDepth(texture(Sampler1, screenUv).r);
+        if (CloudContactEnabled > 0.5) {
+            float cloudEye = linearEyeDepth(texture(Sampler2, screenUv).r);
+            sceneEye = min(sceneEye, cloudEye);
+        }
         float wallEye = linearEyeDepth(gl_FragCoord.z);
-        float sceneEye = linearEyeDepth(sceneDepth);
         float gap = abs(sceneEye - wallEye);
         float contact = 1.0 - smoothstep(0.0, max(ContactWidth, 0.05), gap);
         contact *= contact;
-        float glow = contact * max(ContactStrength, 0.0);
+        float glow = contact * max(ContactStrength, 0.0) * visibility;
         color.rgb += vec3(1.0, 0.18, 0.06) * glow;
         color.a = min(1.0, color.a + glow * 0.75);
     }

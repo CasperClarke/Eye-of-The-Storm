@@ -54,17 +54,15 @@ public final class StormWallRenderer {
             return;
         }
 
-        // Snapshot scene depth after world geometry (works underground / against terrain).
-        // Done before Iris final so AFTER_LEVEL draws can still sample contact.
-        if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_PARTICLES) {
+        // Clouds render after AFTER_PARTICLES and before weather. Capture here so the
+        // contact rim sees terrain + clouds. Iris draws the wall later at AFTER_LEVEL.
+        if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_WEATHER) {
             StormWallContactDepth.capture(mc);
-            return;
-        }
-
-        RenderLevelStageEvent.Stage expected = irisPack
-                ? RenderLevelStageEvent.Stage.AFTER_LEVEL
-                : RenderLevelStageEvent.Stage.AFTER_WEATHER;
-        if (event.getStage() != expected) {
+            if (irisPack) {
+                return;
+            }
+            // Vanilla: fall through and draw the wall on this same stage.
+        } else if (!(irisPack && event.getStage() == RenderLevelStageEvent.Stage.AFTER_LEVEL)) {
             return;
         }
 
