@@ -1,0 +1,738 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Storm Path — Sum of Circles Preview</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --panel: #1a222c;
+      --border: #2c3848;
+      --text: #e8eef4;
+      --muted: #8b9aab;
+      --accent: #5eb0ff;
+      --storm: #ff6b4a;
+      --trail: #3d8fd1;
+      --grid: #243040;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      display: grid;
+      grid-template-columns: 320px 1fr;
+      height: 100vh;
+    }
+    aside {
+      background: var(--panel);
+      border-right: 1px solid var(--border);
+      padding: 16px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    h1 {
+      font-size: 1.05rem;
+      font-weight: 600;
+      margin: 0 0 4px;
+    }
+    .sub {
+      color: var(--muted);
+      font-size: 0.78rem;
+      line-height: 1.35;
+      margin: 0;
+    }
+    label {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      font-size: 0.78rem;
+      color: var(--muted);
+    }
+    label.row {
+      flex-direction: row;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    label.row > span:first-child { flex: 1; }
+    select, input[type="number"], input[type="text"] {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 6px;
+      padding: 6px 8px;
+      font-size: 0.85rem;
+    }
+    input[type="range"] { width: 100%; accent-color: var(--accent); }
+    .val { color: var(--accent); font-variant-numeric: tabular-nums; min-width: 3.2em; text-align: right; }
+    fieldset {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 12px;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    legend {
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--muted);
+      padding: 0 6px;
+    }
+    .btns { display: flex; flex-wrap: wrap; gap: 6px; }
+    button {
+      background: #243447;
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 6px;
+      padding: 7px 12px;
+      font-size: 0.8rem;
+      cursor: pointer;
+    }
+    button:hover { background: #2d4054; }
+    button.primary {
+      background: #1e4a78;
+      border-color: #3a6ea5;
+    }
+    button.primary:hover { background: #255890; }
+    main {
+      position: relative;
+      overflow: hidden;
+      background: #0a0e13;
+    }
+    canvas { display: block; width: 100%; height: 100%; }
+    .hud {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      background: rgba(15, 20, 25, 0.75);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-size: 0.75rem;
+      font-variant-numeric: tabular-nums;
+      line-height: 1.5;
+      pointer-events: none;
+      color: var(--muted);
+    }
+    .hud strong { color: var(--text); }
+    .hint {
+      font-size: 0.72rem;
+      color: var(--muted);
+      line-height: 1.4;
+    }
+    code {
+      font-size: 0.72rem;
+      background: var(--bg);
+      padding: 1px 4px;
+      border-radius: 3px;
+    }
+  </style>
+</head>
+<body>
+  <aside>
+    <div>
+      <h1>Sum of Circles Path</h1>
+      <p class="sub">
+        Shape: <code>Σ r·e<sup>i(ωt+φ)</sup></code><br />
+        Advance: <code>t += dist / |z′(t)|</code><br />
+        Speed scale applied to desired distance each frame.
+      </p>
+    </div>
+
+    <fieldset>
+      <legend>Shape sampling</legend>
+      <label>
+        Distribution preset
+        <select id="preset">
+          <option value="harmonic_decay">Harmonic decay (1/k radii, integer ω)</option>
+          <option value="pink_freq">Pink-ish (r ∝ 1/√|ω|, random ω)</option>
+          <option value="log_freq">Log-spaced frequencies</option>
+          <option value="equal_amp">Equal amplitude, random ω</option>
+          <option value="few_large">Few large circles</option>
+          <option value="many_small">Many tiny wiggles</option>
+          <option value="drift_plus_wiggle">Strong drift + light wiggle</option>
+        </select>
+      </label>
+      <label class="row">
+        <span>Circles (N)</span>
+        <input type="range" id="nCircles" min="2" max="24" value="8" />
+        <span class="val" id="nCirclesVal">8</span>
+      </label>
+      <label class="row">
+        <span>Base radius scale</span>
+        <input type="range" id="radiusScale" min="10" max="400" value="120" />
+        <span class="val" id="radiusScaleVal">120</span>
+      </label>
+      <label class="row">
+        <span>Seed</span>
+        <input type="number" id="seed" value="42" style="width: 7em" />
+      </label>
+      <div class="btns">
+        <button class="primary" id="regen">Regenerate path</button>
+        <button id="randSeed">Random seed</button>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Speed scaling</legend>
+      <label>
+        Scale function s(u)
+        <select id="speedFn">
+          <option value="constant">Constant 1</option>
+          <option value="raised_cos_sq">((1−cos(u−0.5))/2)²  ← Desmos</option>
+          <option value="raised_cos">((1−cos(u−0.5))/2)</option>
+          <option value="sqrt">√(raised cos)</option>
+          <option value="soft_min">0.15 + 0.85·raised_cos²</option>
+          <option value="pulse">Narrow pulses (raised_cos^4)</option>
+        </select>
+      </label>
+      <label class="row">
+        <span>Speed phase rate (du/dt_real)</span>
+        <input type="range" id="speedPhaseRate" min="0.05" max="2" step="0.05" value="0.35" />
+        <span class="val" id="speedPhaseRateVal">0.35</span>
+      </label>
+      <label class="row">
+        <span>Max speed (world/s)</span>
+        <input type="range" id="maxSpeed" min="5" max="200" value="40" />
+        <span class="val" id="maxSpeedVal">40</span>
+      </label>
+      <p class="hint">
+        Desired distance each frame = <code>maxSpeed · s(u) · dt</code>,
+        then parameter steps by that / |z′|.
+      </p>
+    </fieldset>
+
+    <fieldset>
+      <legend>Playback</legend>
+      <label class="row">
+        <span>Time scale</span>
+        <input type="range" id="timeScale" min="0.1" max="5" step="0.1" value="1" />
+        <span class="val" id="timeScaleVal">1.0</span>
+      </label>
+      <label class="row">
+        <span>Trail length (pts)</span>
+        <input type="range" id="trailLen" min="200" max="8000" step="100" value="3000" />
+        <span class="val" id="trailLenVal">3000</span>
+      </label>
+      <label class="row">
+        <span><input type="checkbox" id="showDeriv" checked /> Show tangent</span>
+      </label>
+      <label class="row">
+        <span><input type="checkbox" id="showCircles" /> Show epicycles</span>
+      </label>
+      <label class="row">
+        <span><input type="checkbox" id="autoFit" checked /> Auto-fit view</span>
+      </label>
+      <div class="btns">
+        <button id="playPause">Pause</button>
+        <button id="resetAnim">Reset animation</button>
+        <button id="clearTrail">Clear trail</button>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Components (r, ω, φ)</legend>
+      <pre id="components" class="hint" style="margin:0; white-space:pre-wrap; max-height:160px; overflow:auto"></pre>
+    </fieldset>
+  </aside>
+
+  <main>
+    <canvas id="c"></canvas>
+    <div class="hud" id="hud">—</div>
+  </main>
+
+<script>
+(() => {
+  "use strict";
+
+  // --- seeded RNG (mulberry32) ---
+  function mulberry32(a) {
+    return function () {
+      let t = (a += 0x6d2b79f5);
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  function gauss(rng) {
+    // Box-Muller
+    let u = 0, v = 0;
+    while (u === 0) u = rng();
+    while (v === 0) v = rng();
+    return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+  }
+
+  // --- path: sum of circles ---
+  // z(t) = Σ r_k * exp(i (ω_k t + φ_k))
+  // z'(t) = Σ r_k * i * ω_k * exp(i (ω_k t + φ_k))
+  function sampleComponents(preset, n, radiusScale, rng) {
+    const comps = [];
+    const R = radiusScale;
+
+    const push = (r, w, p) => comps.push({ r, w, p });
+
+    switch (preset) {
+      case "harmonic_decay": {
+        // Classic Fourier-ish: declining amplitudes, integer frequencies, random phase
+        for (let k = 1; k <= n; k++) {
+          const r = (R / k);
+          const w = (Math.pow(-1,k+1)) * k * 0.1;
+          const p = rng() * Math.PI * 2;
+          push(r, w, p);
+        }
+        break;
+      }
+      case "pink_freq": {
+        for (let k = 0; k < n; k++) {
+          const w = (rng() * 2 - 1) * (0.05 + 1.2 * rng());
+          const r = (R / Math.sqrt(Math.max(0.08, Math.abs(w) * 8))) * (0.5 + rng());
+          const p = rng() * Math.PI * 2;
+          push(r, w, p);
+        }
+        break;
+      }
+      case "log_freq": {
+        for (let k = 0; k < n; k++) {
+          const t = k / Math.max(1, n - 1);
+          const magW = 0.04 * Math.pow(40, t); // log-spaced |ω|
+          const w = (rng() < 0.5 ? -1 : 1) * magW;
+          const r = (R / (1 + 6 * t)) * (0.5 + rng());
+          const p = rng() * Math.PI * 2;
+          push(r, w, p);
+        }
+        break;
+      }
+      case "equal_amp": {
+        for (let k = 0; k < n; k++) {
+          const r = (R / n) * 2.2;
+          const w = (rng() * 2 - 1) * (0.08 + 0.9 * rng());
+          const p = rng() * Math.PI * 2;
+          push(r, w, p);
+        }
+        break;
+      }
+      case "few_large": {
+        const count = Math.max(2, Math.min(n, 5));
+        for (let k = 0; k < count; k++) {
+          const r = R * (0.35 + 0.55 * rng()) / (k + 1);
+          const w = (rng() < 0.5 ? -1 : 1) * (0.06 + 0.35 * rng());
+          const p = rng() * Math.PI * 2;
+          push(r, w, p);
+        }
+        break;
+      }
+      case "many_small": {
+        for (let k = 0; k < n; k++) {
+          const r = (R / n) * (0.4 + 1.2 * rng());
+          const w = (rng() * 2 - 1) * (0.3 + 2.0 * rng());
+          const p = rng() * Math.PI * 2;
+          push(r, w, p);
+        }
+        // add one slow drift circle
+        push(R * 0.9, 0.04 * (rng() < 0.5 ? -1 : 1), rng() * Math.PI * 2);
+        break;
+      }
+      case "drift_plus_wiggle":
+      {
+        // Large slow drift + smaller higher-frequency wiggles
+        push(R * 5, 0.01 * (rng() < 0.5 ? -1 : 1), rng() * Math.PI * 2);
+        for (let k = 1; k < n; k++) {
+          const r = (R * 0.55) / Math.pow(k, 0.85) * (0.5 + rng());
+          const w = (0.12 + 0.55 * k / n) * (rng() < 0.5 ? -1 : 1) * (0.7 + 0.6 * rng());
+          const p = rng() * Math.PI * 2;
+          push(r, w, p);
+        }
+        break;
+      }
+      case "custom":
+      default: {
+        // Large slow drift + smaller higher-frequency wiggles
+        push(R * 1.4, 0.035 * (rng() < 0.5 ? -1 : 1), rng() * Math.PI * 2);
+        for (let k = 1; k < n; k++) {
+          const r = (R * 0.55) / Math.pow(k, 0.85) * (0.5 + rng());
+          const w = (0.12 + 0.55 * k / n) * (rng() < 0.5 ? -1 : 1) * (0.7 + 0.6 * rng());
+          const p = rng() * Math.PI * 2;
+          push(r, w, p);
+        }
+        break;
+      }
+      
+    }
+    return comps;
+  }
+
+  function evalZ(comps, t) {
+    let x = 0, y = 0;
+    for (const c of comps) {
+      const a = c.w * t + c.p;
+      x += (c.r) * Math.cos(a);
+      y += (c.r) * Math.sin(a);
+    }
+    return { x, y };
+  }
+
+  function evalDeriv(comps, t) {
+    // d/dt [r cos(wt+p)] = -r w sin(wt+p)
+    // d/dt [r sin(wt+p)] =  r w cos(wt+p)
+    let dx = 0, dy = 0;
+    for (const c of comps) {
+      const a = c.w * t + c.p;
+      dx += -c.r * c.w * Math.sin(a);
+      dy +=  c.r * c.w * Math.cos(a);
+    }
+    return { dx, dy, mag: Math.hypot(dx, dy) };
+  }
+
+  /** Epicyclic chain positions for visualization (ordered by |r| desc). */
+  function epicycleChain(comps, t) {
+    const ordered = [...comps].sort((a, b) => Math.abs(b.r) - Math.abs(a.r));
+    const pts = [{ x: 0, y: 0 }];
+    let x = 0, y = 0;
+    for (const c of ordered) {
+      const a = c.w * t + c.p;
+      x += c.r * Math.cos(a);
+      y += c.r * Math.sin(a);
+      pts.push({ x, y, r: Math.abs(c.r) });
+    }
+    return pts;
+  }
+
+  // --- speed scale s(u) ---
+  function raisedCos(u) {
+    return (1 - Math.cos(u - 0.5)) / 2;
+  }
+
+  function speedScale(kind, u) {
+    const rc = raisedCos(u);
+    switch (kind) {
+      case "raised_cos": return rc;
+      case "raised_cos_sq": return rc * rc;
+      case "sqrt": return Math.sqrt(Math.max(0, rc));
+      case "soft_min": return 0.15 + 0.85 * rc * rc;
+      case "pulse": {
+        const r2 = rc * rc;
+        return r2 * r2;
+      }
+      case "constant":
+      default: return 1;
+    }
+  }
+
+  // --- UI / state ---
+  const canvas = document.getElementById("c");
+  const ctx = canvas.getContext("2d");
+  const hud = document.getElementById("hud");
+  const compsEl = document.getElementById("components");
+
+  const $ = (id) => document.getElementById(id);
+  const syncVal = (id, fmt = (v) => v) => {
+    const el = $(id);
+    const out = $(id + "Val");
+    const update = () => { out.textContent = fmt(el.value); };
+    el.addEventListener("input", update);
+    update();
+    return el;
+  };
+
+  const nCircles = syncVal("nCircles");
+  const radiusScale = syncVal("radiusScale");
+  const speedPhaseRate = syncVal("speedPhaseRate", (v) => Number(v).toFixed(2));
+  const maxSpeed = syncVal("maxSpeed");
+  const timeScale = syncVal("timeScale", (v) => Number(v).toFixed(1));
+  const trailLen = syncVal("trailLen");
+
+  let comps = [];
+  let paramT = 0;
+  let realU = 0; // phase for speed function
+  let trail = [];
+  let playing = true;
+  let view = { cx: 0, cy: 0, scale: 1 }; // world → screen: scale px per world
+  let lastTs = performance.now();
+  let pathBounds = { minX: 0, maxX: 0, minY: 0, maxY: 0 };
+
+  function regenerate() {
+    const seed = Number($("seed").value) || 0;
+    const rng = mulberry32(seed >>> 0);
+    comps = sampleComponents(
+      $("preset").value,
+      Number(nCircles.value),
+      Number(radiusScale.value),
+      rng
+    );
+    // Estimate path bounds by sampling parameter over a window
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (let i = 0; i < 400; i++) {
+      const t = (i / 400) * 80;
+      const p = evalZ(comps, t);
+      minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
+      minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y);
+    }
+    pathBounds = { minX, maxX, minY, maxY };
+    compsEl.textContent = comps
+      .map((c, i) => `${i}: r=${c.r.toFixed(1)}  ω=${c.w.toFixed(3)}  φ=${c.p.toFixed(2)}`)
+      .join("\n");
+    resetAnim();
+    fitView();
+  }
+
+  function resetAnim() {
+    paramT = 0;
+    realU = 0;
+    trail = [];
+    const p = evalZ(comps, paramT);
+    trail.push({ x: p.x, y: p.y });
+  }
+
+  function fitView() {
+    const pad = 40;
+    const w = canvas.width;
+    const h = canvas.height;
+    const bw = Math.max(1, pathBounds.maxX - pathBounds.minX);
+    const bh = Math.max(1, pathBounds.maxY - pathBounds.minY);
+    const scale = Math.min((w - pad * 2) / bw, (h - pad * 2) / bh) * 0.85;
+    view.scale = scale;
+    view.cx = (pathBounds.minX + pathBounds.maxX) / 2;
+    view.cy = (pathBounds.minY + pathBounds.maxY) / 2;
+  }
+
+  function worldToScreen(x, y) {
+    return {
+      sx: canvas.width / 2 + (x - view.cx) * view.scale,
+      sy: canvas.height / 2 - (y - view.cy) * view.scale,
+    };
+  }
+
+  function resize() {
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.parentElement.getBoundingClientRect();
+    canvas.width = Math.floor(rect.width * dpr);
+    canvas.height = Math.floor(rect.height * dpr);
+    if ($("autoFit").checked) fitView();
+  }
+
+  function step(dt) {
+    if (!playing || comps.length === 0) return;
+
+    const ts = Number(timeScale.value);
+    const dtSim = dt * ts;
+    realU += Number(speedPhaseRate.value) * dtSim;
+
+    const s = speedScale($("speedFn").value, realU);
+    const desired = Number(maxSpeed.value) * s * dtSim;
+
+    // Subdivide if a large step would overshoot (keep path smooth)
+    let remaining = desired;
+    let guard = 0;
+    while (remaining > 1e-9 && guard++ < 32) {
+      const d = evalDeriv(comps, paramT);
+      const mag = Math.max(d.mag, 1e-6);
+      const stepDist = Math.min(remaining, Math.max(2, Number(maxSpeed.value) * 0.05));
+      const dParam = stepDist / mag;
+      paramT += dParam;
+      remaining -= stepDist;
+
+      const p = evalZ(comps, paramT);
+      trail.push({ x: p.x, y: p.y });
+    }
+
+    const maxPts = Number(trailLen.value);
+    if (trail.length > maxPts) trail.splice(0, trail.length - maxPts);
+  }
+
+  function draw() {
+    const w = canvas.width;
+    const h = canvas.height;
+    ctx.fillStyle = "#0a0e13";
+    ctx.fillRect(0, 0, w, h);
+
+    // grid
+    const { sx: ox, sy: oy } = worldToScreen(0, 0);
+    ctx.strokeStyle = "#1a2430";
+    ctx.lineWidth = 1;
+    const spacing = niceGrid(80 / view.scale);
+    const startX = Math.floor((view.cx - w / 2 / view.scale) / spacing) * spacing;
+    const endX = view.cx + w / 2 / view.scale;
+    const startY = Math.floor((view.cy - h / 2 / view.scale) / spacing) * spacing;
+    const endY = view.cy + h / 2 / view.scale;
+    ctx.beginPath();
+    for (let x = startX; x <= endX; x += spacing) {
+      const p = worldToScreen(x, 0);
+      ctx.moveTo(p.sx, 0);
+      ctx.lineTo(p.sx, h);
+    }
+    for (let y = startY; y <= endY; y += spacing) {
+      const p = worldToScreen(0, y);
+      ctx.moveTo(0, p.sy);
+      ctx.lineTo(w, p.sy);
+    }
+    ctx.stroke();
+
+    // axes
+    ctx.strokeStyle = "#2a3a4c";
+    ctx.beginPath();
+    ctx.moveTo(0, oy); ctx.lineTo(w, oy);
+    ctx.moveTo(ox, 0); ctx.lineTo(ox, h);
+    ctx.stroke();
+
+    // faint full path sample
+    ctx.strokeStyle = "rgba(61, 143, 209, 0.18)";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    for (let i = 0; i <= 600; i++) {
+      const t = (i / 600) * Math.max(paramT + 40, 80);
+      const p = evalZ(comps, t);
+      const s = worldToScreen(p.x, p.y);
+      if (i === 0) ctx.moveTo(s.sx, s.sy);
+      else ctx.lineTo(s.sx, s.sy);
+    }
+    ctx.stroke();
+
+    // trail (where storm has been)
+    if (trail.length > 1) {
+      ctx.lineWidth = 2.5;
+      for (let i = 1; i < trail.length; i++) {
+        const a = i / trail.length;
+        ctx.strokeStyle = `rgba(94, 176, 255, ${0.15 + 0.75 * a})`;
+        const p0 = worldToScreen(trail[i - 1].x, trail[i - 1].y);
+        const p1 = worldToScreen(trail[i].x, trail[i].y);
+        ctx.beginPath();
+        ctx.moveTo(p0.sx, p0.sy);
+        ctx.lineTo(p1.sx, p1.sy);
+        ctx.stroke();
+      }
+    }
+
+    const pos = evalZ(comps, paramT);
+    const der = evalDeriv(comps, paramT);
+    const screen = worldToScreen(pos.x, pos.y);
+
+    // epicycles
+    if ($("showCircles").checked) {
+      const chain = epicycleChain(comps, paramT);
+      ctx.strokeStyle = "rgba(255, 200, 80, 0.35)";
+      ctx.fillStyle = "rgba(255, 200, 80, 0.5)";
+      for (let i = 1; i < chain.length; i++) {
+        const prev = worldToScreen(chain[i - 1].x, chain[i - 1].y);
+        const cur = worldToScreen(chain[i].x, chain[i].y);
+        const rPx = chain[i].r * view.scale;
+        ctx.beginPath();
+        ctx.arc(prev.sx, prev.sy, rPx, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(prev.sx, prev.sy);
+        ctx.lineTo(cur.sx, cur.sy);
+        ctx.stroke();
+      }
+    }
+
+    // tangent / velocity direction
+    if ($("showDeriv").checked && der.mag > 1e-6) {
+      const len = 40;
+      const ux = der.dx / der.mag;
+      const uy = der.dy / der.mag;
+      const tip = worldToScreen(pos.x + ux * (len / view.scale), pos.y + uy * (len / view.scale));
+      ctx.strokeStyle = "#ffb86b";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(screen.sx, screen.sy);
+      ctx.lineTo(tip.sx, tip.sy);
+      ctx.stroke();
+    }
+
+    // storm marker
+    const eyeR = Math.max(6, 8);
+    ctx.beginPath();
+    ctx.arc(screen.sx, screen.sy, eyeR + 4, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(255, 107, 74, 0.25)";
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(screen.sx, screen.sy, eyeR, 0, Math.PI * 2);
+    ctx.fillStyle = "#ff6b4a";
+    ctx.fill();
+    ctx.strokeStyle = "#fff";
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    const s = speedScale($("speedFn").value, realU);
+    hud.innerHTML =
+      `<strong>pos</strong> (${pos.x.toFixed(1)}, ${pos.y.toFixed(1)})<br/>` +
+      `<strong>param t</strong> ${paramT.toFixed(3)} &nbsp; <strong>|z′|</strong> ${der.mag.toFixed(2)}<br/>` +
+      `<strong>speed scale</strong> ${s.toFixed(3)} &nbsp; <strong>u</strong> ${realU.toFixed(2)}<br/>` +
+      `<strong>trail</strong> ${trail.length} pts`;
+  }
+
+  function niceGrid(approx) {
+    const pow = Math.pow(10, Math.floor(Math.log10(approx)));
+    const n = approx / pow;
+    let m = 1;
+    if (n >= 5) m = 5;
+    else if (n >= 2) m = 2;
+    return m * pow;
+  }
+
+  function frame(ts) {
+    const dt = Math.min(0.05, (ts - lastTs) / 1000);
+    lastTs = ts;
+    step(dt);
+    draw();
+    requestAnimationFrame(frame);
+  }
+
+  // events
+  $("regen").addEventListener("click", regenerate);
+  $("randSeed").addEventListener("click", () => {
+    $("seed").value = (Math.random() * 1e9) | 0;
+    regenerate();
+  });
+  $("preset").addEventListener("change", regenerate);
+  nCircles.addEventListener("change", regenerate);
+  radiusScale.addEventListener("change", regenerate);
+  $("playPause").addEventListener("click", () => {
+    playing = !playing;
+    $("playPause").textContent = playing ? "Pause" : "Play";
+  });
+  $("resetAnim").addEventListener("click", resetAnim);
+  $("clearTrail").addEventListener("click", () => { trail = []; });
+  $("autoFit").addEventListener("change", () => { if ($("autoFit").checked) fitView(); });
+  window.addEventListener("resize", resize);
+
+  // pan / zoom
+  let dragging = false, lastMX = 0, lastMY = 0;
+  canvas.addEventListener("mousedown", (e) => {
+    dragging = true;
+    lastMX = e.clientX;
+    lastMY = e.clientY;
+    $("autoFit").checked = false;
+  });
+  window.addEventListener("mouseup", () => { dragging = false; });
+  canvas.addEventListener("mousemove", (e) => {
+    if (!dragging) return;
+    const dpr = window.devicePixelRatio || 1;
+    view.cx -= (e.clientX - lastMX) * dpr / view.scale;
+    view.cy += (e.clientY - lastMY) * dpr / view.scale;
+    lastMX = e.clientX;
+    lastMY = e.clientY;
+  });
+  canvas.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    $("autoFit").checked = false;
+    const factor = e.deltaY > 0 ? 0.9 : 1.1;
+    view.scale *= factor;
+  }, { passive: false });
+
+  resize();
+  regenerate();
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

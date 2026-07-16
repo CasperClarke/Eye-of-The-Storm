@@ -29,7 +29,7 @@ public final class StormMapHudOverlay {
     private static final int WIDGET_SIZE = 96;
     private static final int MARGIN = 10;
     private static final int STORM_CIRCLE_RADIUS = 38;
-    private static final int PLAYER_ICON_SIZE = 14;
+    private static final int PLAYER_ICON_SIZE = 8;
     private static final int OFF_MAP_ICON_SIZE = 8;
     private static final int PATH_LINE_WIDTH = 1;
     private static final int STORM_FILL_COLOR = 0x18FF4444;
