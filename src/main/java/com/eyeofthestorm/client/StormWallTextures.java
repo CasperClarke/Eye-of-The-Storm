@@ -52,7 +52,7 @@ public final class StormWallTextures {
         );
     }
 
-    /** Binds morph atlas and sets shader uniforms. */
+    /** Binds morph atlas (+ optional scene depth) and sets shader uniforms. */
     public static void applyMorphToShader(
             ShaderInstance shader,
             float stormRelX,
@@ -71,6 +71,18 @@ public final class StormWallTextures {
 
         RenderSystem.setShaderTexture(0, MORPH_ATLAS);
         shader.setSampler("Sampler0", atlas);
+
+        boolean contact = StormWallContactDepth.hasCapture();
+        if (contact) {
+            AbstractTexture depth = StormWallContactDepth.texture();
+            RenderSystem.setShaderTexture(1, depth.getId());
+            shader.setSampler("Sampler1", depth);
+        } else {
+            // Keep Sampler1 valid when contact is disabled.
+            RenderSystem.setShaderTexture(1, MORPH_ATLAS);
+            shader.setSampler("Sampler1", atlas);
+        }
+
         var morphCycle = shader.getUniform("MorphCycle");
         if (morphCycle != null) {
             // Seconds; storm_wall.fsh converts via GameTime * (1200 / MorphCycle).
@@ -83,6 +95,35 @@ public final class StormWallTextures {
         var stormCenter = shader.getUniform("StormCenterRel");
         if (stormCenter != null) {
             stormCenter.set(stormRelX, stormRelZ);
+        }
+
+        Minecraft mc = Minecraft.getInstance();
+        var screenSize = shader.getUniform("ScreenSize");
+        if (screenSize != null) {
+            screenSize.set(
+                    (float) Math.max(1, StormWallContactDepth.width()),
+                    (float) Math.max(1, StormWallContactDepth.height())
+            );
+        }
+        var nearPlane = shader.getUniform("NearPlane");
+        if (nearPlane != null) {
+            nearPlane.set(0.05f);
+        }
+        var farPlane = shader.getUniform("FarPlane");
+        if (farPlane != null) {
+            farPlane.set(Math.max(32.0f, mc.gameRenderer.getDepthFar()));
+        }
+        var contactWidth = shader.getUniform("ContactWidth");
+        if (contactWidth != null) {
+            contactWidth.set(Math.max(0.05f, StormConfig.wallContactWidth));
+        }
+        var contactStrength = shader.getUniform("ContactStrength");
+        if (contactStrength != null) {
+            contactStrength.set(Math.max(0.0f, StormConfig.wallContactStrength));
+        }
+        var contactEnabled = shader.getUniform("ContactEnabled");
+        if (contactEnabled != null) {
+            contactEnabled.set(contact ? 1.0f : 0.0f);
         }
     }
 

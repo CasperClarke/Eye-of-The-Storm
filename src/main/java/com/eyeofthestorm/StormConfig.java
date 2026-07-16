@@ -56,6 +56,15 @@ public final class StormConfig {
     /** Seconds for one full loop through all morph slices. */
     public static float wallVoronoiMorphCycleSeconds = 32f;
 
+    /**
+     * World-unit thickness of the depth-buffer contact highlight
+     * (where the wall nearly intersects terrain / caves / blocks).
+     */
+    public static float wallContactWidth = 1.75f;
+
+    /** Extra emissive strength of the contact rim (0 = off). */
+    public static float wallContactStrength = 1.15f;
+
     /** Storm wall solid tint (RGB 0-255). */
     public static int wallColorR = 255;
     public static int wallColorG = 0;
@@ -63,6 +72,24 @@ public final class StormConfig {
 
     /** Vignette ramps within this many blocks of the storm wall (vanilla default: 5). */
     public static float vignetteWarningBlocks = 5f;
+
+    /**
+     * Full-screen storm veil when outside the wall (0–1 peak opacity).
+     * Soft translucent wash; morph atlas only gently modulates it.
+     */
+    public static float outsideOverlayAlpha = 0.32f;
+
+    /** Blocks inside the wall where the storm veil begins ramping (full at the wall & outside). */
+    public static float outsideOverlayFadeBlocks = 3f;
+
+    /** How many Voronoi tiles span the screen width for the outside veil. */
+    public static float outsideOverlayTiles = 2.5f;
+
+    /**
+     * How strongly the morph pattern modulates the veil (0 = flat tint, 1 = full density map).
+     * Keep low — high values read as opaque Voronoi splatters.
+     */
+    public static float outsideOverlayContrast = 0.62f;
 
     /** Inside-wall warning hum only plays within this many blocks of the radius edge. */
     public static double soundInsideRange = 8.0;

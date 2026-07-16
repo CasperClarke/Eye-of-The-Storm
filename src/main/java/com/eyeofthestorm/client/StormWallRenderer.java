@@ -45,18 +45,26 @@ public final class StormWallRenderer {
         // is active; AFTER_LEVEL is after Iris composite/final, so the soft program
         // can blend onto the finished frame without reverting to discard shaders.
         boolean irisPack = IrisCompat.isShaderPackInUse();
+        Minecraft mc = Minecraft.getInstance();
+
+        if (!ClientStormState.shouldRender()
+                || mc.player == null
+                || mc.level == null
+                || !mc.level.dimension().equals(Level.OVERWORLD)) {
+            return;
+        }
+
+        // Snapshot scene depth after world geometry (works underground / against terrain).
+        // Done before Iris final so AFTER_LEVEL draws can still sample contact.
+        if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_PARTICLES) {
+            StormWallContactDepth.capture(mc);
+            return;
+        }
+
         RenderLevelStageEvent.Stage expected = irisPack
                 ? RenderLevelStageEvent.Stage.AFTER_LEVEL
                 : RenderLevelStageEvent.Stage.AFTER_WEATHER;
         if (event.getStage() != expected) {
-            return;
-        }
-        if (!ClientStormState.shouldRender()) {
-            return;
-        }
-
-        Minecraft mc = Minecraft.getInstance();
-        if (mc.player == null || mc.level == null || !mc.level.dimension().equals(Level.OVERWORLD)) {
             return;
         }
 
@@ -176,6 +184,18 @@ public final class StormWallRenderer {
         if (!StormWallTextures.isRegistered()) {
             StormWallTextures.register();
         }
+    }
+
+    static float distanceToWall(net.minecraft.world.phys.Vec3 position) {
+        if (!ClientStormState.shouldRender()) {
+            return Float.POSITIVE_INFINITY;
+        }
+        return (float) StormBoundaryMath.distanceToWall(
+                position,
+                ClientStormState.centerX,
+                ClientStormState.centerZ,
+                ClientStormState.radius
+        );
     }
 
     static float outsideGap(net.minecraft.world.phys.Vec3 position) {
