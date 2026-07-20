@@ -2,10 +2,8 @@ package com.eyeofthestorm.network;
 
 import com.eyeofthestorm.EyeOfTheStormMod;
 import com.eyeofthestorm.StormConfig;
-import com.eyeofthestorm.client.StormPathPreviewScreen;
 import com.eyeofthestorm.storm.StormData;
 import com.eyeofthestorm.storm.StormStrongholds;
-import net.minecraft.client.Minecraft;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
@@ -123,24 +121,11 @@ public record OpenStormPathPreviewPayload(
     }
 
     private static void onRegister(RegisterPayloadHandlersEvent event) {
-        PayloadRegistrar registrar = event.registrar(EyeOfTheStormMod.MOD_ID).versioned("11");
+        PayloadRegistrar registrar = event.registrar(EyeOfTheStormMod.MOD_ID).versioned("13");
         registrar.playToClient(TYPE, STREAM_CODEC, OpenStormPathPreviewPayload::handleClient);
     }
 
     private static void handleClient(OpenStormPathPreviewPayload payload, IPayloadContext context) {
-        context.enqueueWork(() -> Minecraft.getInstance().setScreen(new StormPathPreviewScreen(
-                payload.seed(),
-                payload.circleCount(),
-                payload.pathRadiusScale(),
-                payload.peakSpeed(),
-                payload.speedPhaseRatePerTick(),
-                payload.pathParam(),
-                payload.speedPhase(),
-                payload.pathOriginX(),
-                payload.pathOriginZ(),
-                payload.eyeRadius(),
-                payload.strongholdX(),
-                payload.strongholdZ()
-        )));
+        ClientPacketHooks.openStormPathPreview.accept(payload, context);
     }
 }

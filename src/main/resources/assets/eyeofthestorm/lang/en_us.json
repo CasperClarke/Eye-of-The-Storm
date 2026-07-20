@@ -10,6 +10,10 @@
   "message.eyeofthestorm.radar_off": "Storm radar disabled",
   "message.eyeofthestorm.debug_wall_on": "Storm wall debug wireframe enabled",
   "message.eyeofthestorm.debug_wall_off": "Storm wall debug wireframe disabled",
+  "config.eyeofthestorm.radar.open": "Radar open",
   "config.eyeofthestorm.radar.center_indicator": "Center indicator",
-  "config.eyeofthestorm.radar.trail_duration_seconds": "Trail duration (seconds)"
+  "config.eyeofthestorm.radar.trail_duration_seconds": "Trail duration (seconds)",
+  "config.eyeofthestorm.radar.player_color_r": "Player marker red",
+  "config.eyeofthestorm.radar.player_color_g": "Player marker green",
+  "config.eyeofthestorm.radar.player_color_b": "Player marker blue"
 }

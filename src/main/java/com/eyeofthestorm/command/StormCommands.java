@@ -2,7 +2,10 @@ package com.eyeofthestorm.command;
 
 import com.eyeofthestorm.StormConfig;
 import com.eyeofthestorm.network.OpenStormPathPreviewPayload;
+import com.eyeofthestorm.network.PushRadarColorPayload;
+import com.eyeofthestorm.network.RadarPlayersPayload;
 import com.eyeofthestorm.registry.ModItems;
+import com.eyeofthestorm.storm.RadarPlayerColors;
 import com.eyeofthestorm.storm.StormData;
 import com.eyeofthestorm.storm.StormEvents;
 import com.eyeofthestorm.storm.StormFourierPath;
@@ -15,6 +18,7 @@ import com.mojang.brigadier.arguments.LongArgumentType;
 import com.mojang.brigadier.context.CommandContext;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
+import net.minecraft.commands.arguments.EntityArgument;
 import net.minecraft.core.GlobalPos;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.network.chat.Component;
@@ -84,6 +88,12 @@ public final class StormCommands {
                 .then(Commands.literal("give_compass").executes(StormCommands::giveCompass))
                 .then(Commands.literal("give_map").executes(StormCommands::giveMap))
                 .then(Commands.literal("toggle_immunity").executes(StormCommands::toggleImmunity))
+                .then(Commands.literal("set_player_color")
+                        .then(Commands.argument("player", EntityArgument.player())
+                                .then(Commands.argument("r", IntegerArgumentType.integer(0, 255))
+                                        .then(Commands.argument("g", IntegerArgumentType.integer(0, 255))
+                                                .then(Commands.argument("b", IntegerArgumentType.integer(0, 255))
+                                                        .executes(StormCommands::setPlayerColor))))))
                 .then(Commands.literal("help").executes(StormCommands::help))
         );
     }
@@ -415,6 +425,33 @@ public final class StormCommands {
         return 1;
     }
 
+    private static int setPlayerColor(CommandContext<CommandSourceStack> ctx) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+        ServerPlayer player = EntityArgument.getPlayer(ctx, "player");
+        int r = IntegerArgumentType.getInteger(ctx, "r");
+        int g = IntegerArgumentType.getInteger(ctx, "g");
+        int b = IntegerArgumentType.getInteger(ctx, "b");
+
+        RadarPlayerColors.set(player.getUUID(), r, g, b);
+        PacketDistributor.sendToPlayer(player, new PushRadarColorPayload(r, g, b));
+
+        ServerLevel level = overworld(ctx.getSource());
+        if (level != null) {
+            PacketDistributor.sendToPlayersInDimension(level, RadarPlayersPayload.from(level));
+        }
+
+        ctx.getSource().sendSuccess(
+                () -> Component.literal(String.format(
+                        "Set radar color for %s to RGB(%d, %d, %d)",
+                        player.getGameProfile().getName(),
+                        r,
+                        g,
+                        b
+                )),
+                true
+        );
+        return 1;
+    }
+
     private static int help(CommandContext<CommandSourceStack> ctx) {
         ctx.getSource().sendSuccess(() -> Component.literal("""
                 /storm init_here | init <x> <y> <z>
@@ -423,6 +460,7 @@ public final class StormCommands {
                 /storm set_speed_phase_minutes <min> | set_speed_phase_rate <per_tick>
                 /storm set_speed_phase_offset <turns>   (0=peak, 0.5≈opposite; keeps location)
                 /storm set_path_scale <blocks> | set_circle_count <n> | regen_path [seed]
+                /storm set_player_color <player> <r> <g> <b>
                 /storm preview_path
                 /storm pause | resume | status | give_compass | give_map | toggle_immunity
                 """), false);

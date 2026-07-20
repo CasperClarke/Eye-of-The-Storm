@@ -52,7 +52,7 @@ public final class StormRadarKeybinds {
             if (mc.player != null) {
                 mc.player.displayClientMessage(
                         Component.translatable(
-                                StormRadarState.enabled
+                                StormRadarState.enabled()
                                         ? "message.eyeofthestorm.radar_on"
                                         : "message.eyeofthestorm.radar_off"
                         ),

@@ -2,7 +2,6 @@ package com.eyeofthestorm.network;
 
 import com.eyeofthestorm.EyeOfTheStormMod;
 import com.eyeofthestorm.StormConfig;
-import com.eyeofthestorm.client.ClientStormState;
 import com.eyeofthestorm.storm.StormData;
 import com.eyeofthestorm.storm.StormLogic;
 import net.minecraft.network.RegistryFriendlyByteBuf;
@@ -121,11 +120,11 @@ public record StormSyncPayload(
     }
 
     private static void onRegister(RegisterPayloadHandlersEvent event) {
-        PayloadRegistrar registrar = event.registrar(EyeOfTheStormMod.MOD_ID).versioned("11");
+        PayloadRegistrar registrar = event.registrar(EyeOfTheStormMod.MOD_ID).versioned("13");
         registrar.playToClient(TYPE, STREAM_CODEC, StormSyncPayload::handleClient);
     }
 
     private static void handleClient(StormSyncPayload payload, IPayloadContext context) {
-        context.enqueueWork(() -> ClientStormState.update(payload));
+        ClientPacketHooks.stormSync.accept(payload, context);
     }
 }

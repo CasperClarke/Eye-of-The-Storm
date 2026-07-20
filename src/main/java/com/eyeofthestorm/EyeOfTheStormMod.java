@@ -1,21 +1,21 @@
 package com.eyeofthestorm;
 
-import com.eyeofthestorm.command.StormCommands;
-import com.eyeofthestorm.client.ClientConfigScreenRegistration;
 import com.eyeofthestorm.client.StormRadarConfig;
+import com.eyeofthestorm.command.StormCommands;
 import com.eyeofthestorm.network.ApplyStormPathPreviewPayload;
 import com.eyeofthestorm.network.OpenStormPathPreviewPayload;
+import com.eyeofthestorm.network.PushRadarColorPayload;
+import com.eyeofthestorm.network.RadarPlayersPayload;
+import com.eyeofthestorm.network.SetRadarColorPayload;
 import com.eyeofthestorm.network.StormSyncPayload;
 import com.eyeofthestorm.registry.ModItems;
 import com.eyeofthestorm.storm.StormEvents;
 import com.mojang.logging.LogUtils;
 import net.neoforged.bus.api.IEventBus;
-import net.neoforged.api.distmarker.Dist;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.Mod;
-import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.fml.config.ModConfig;
-import net.neoforged.fml.loading.FMLEnvironment;
+import net.neoforged.neoforge.common.NeoForge;
 import org.slf4j.Logger;
 
 @Mod(EyeOfTheStormMod.MOD_ID)
@@ -25,13 +25,13 @@ public class EyeOfTheStormMod {
 
     public EyeOfTheStormMod(IEventBus modBus, ModContainer container) {
         container.registerConfig(ModConfig.Type.CLIENT, StormRadarConfig.SPEC);
-        if (FMLEnvironment.dist == Dist.CLIENT) {
-            ClientConfigScreenRegistration.register(container);
-        }
         ModItems.register(modBus);
         StormSyncPayload.register(modBus);
         OpenStormPathPreviewPayload.register(modBus);
         ApplyStormPathPreviewPayload.register(modBus);
+        SetRadarColorPayload.register(modBus);
+        RadarPlayersPayload.register(modBus);
+        PushRadarColorPayload.register(modBus);
         NeoForge.EVENT_BUS.register(StormEvents.class);
         NeoForge.EVENT_BUS.register(StormCommands.class);
         LOGGER.info("Eye of the Storm mod ready (full simulation + client wall/vignette)");

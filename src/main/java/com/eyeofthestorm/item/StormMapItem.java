@@ -1,7 +1,6 @@
 package com.eyeofthestorm.item;
 
-import com.eyeofthestorm.client.StormRadarState;
-import net.minecraft.network.chat.Component;
+import com.eyeofthestorm.network.ClientItemHooks;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResultHolder;
 import net.minecraft.world.entity.player.Player;
@@ -21,15 +20,7 @@ public class StormMapItem extends Item {
     public InteractionResultHolder<ItemStack> use(Level level, Player player, InteractionHand hand) {
         ItemStack stack = player.getItemInHand(hand);
         if (level.isClientSide) {
-            StormRadarState.toggle();
-            player.displayClientMessage(
-                    Component.translatable(
-                            StormRadarState.enabled
-                                    ? "message.eyeofthestorm.radar_on"
-                                    : "message.eyeofthestorm.radar_off"
-                    ),
-                    true
-            );
+            ClientItemHooks.toggleStormRadar.accept(player);
         }
         return InteractionResultHolder.sidedSuccess(stack, level.isClientSide());
     }

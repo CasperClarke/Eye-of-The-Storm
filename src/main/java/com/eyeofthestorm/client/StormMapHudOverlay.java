@@ -1,6 +1,7 @@
 package com.eyeofthestorm.client;
 
 import com.eyeofthestorm.EyeOfTheStormMod;
+import com.eyeofthestorm.network.RadarPlayerEntry;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.math.Axis;
 import net.minecraft.Util;
@@ -19,10 +20,11 @@ import net.neoforged.neoforge.client.event.RenderGuiEvent;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 /**
  * Fixed-scale storm radar toggled via keybind or Storm Map item.
- * The blue circle stays the same on-screen size; the player icon moves within it.
+ * The blue circle stays the same on-screen size; player icons move within it.
  */
 @EventBusSubscriber(modid = EyeOfTheStormMod.MOD_ID, value = Dist.CLIENT)
 public final class StormMapHudOverlay {
@@ -49,7 +51,7 @@ public final class StormMapHudOverlay {
 
     @SubscribeEvent
     public static void onRenderGui(RenderGuiEvent.Post event) {
-        if (!StormRadarState.enabled) {
+        if (!StormRadarState.enabled()) {
             return;
         }
 
@@ -91,22 +93,68 @@ public final class StormMapHudOverlay {
             drawCircleOutline(graphics, centerX, centerY, STORM_CIRCLE_RADIUS, STORM_OUTLINE_COLOR);
             graphics.fill(centerX, centerY, centerX + 1, centerY + 1, CENTER_DOT_COLOR);
 
-            double relX = player.getX() - ClientStormState.centerX;
-            double relZ = player.getZ() - ClientStormState.centerZ;
-            float mapX = (float) (relX / ClientStormState.radius * STORM_CIRCLE_RADIUS);
-            float mapY = (float) (relZ / ClientStormState.radius * STORM_CIRCLE_RADIUS);
-            float iconRadius = (float) Math.hypot(mapX, mapY);
-            float offMapMarkerRadius = STORM_CIRCLE_RADIUS + OFF_MAP_ICON_SIZE / 2.0F + 1.0F;
-
-            if (iconRadius > offMapMarkerRadius) {
-                float markerX = centerX + mapX / iconRadius * offMapMarkerRadius;
-                float markerY = centerY + mapY / iconRadius * offMapMarkerRadius;
-                drawOffMapIcon(graphics, mc, markerX, markerY);
-            } else {
-                drawPlayerIcon(graphics, mc, centerX + mapX, centerY + mapY, player.getYRot());
+            UUID localId = player.getUUID();
+            for (RadarPlayerEntry entry : ClientRadarPlayers.snapshot()) {
+                if (entry.uuid().equals(localId)) {
+                    continue;
+                }
+                drawPlayerMarker(
+                        graphics,
+                        mc,
+                        centerX,
+                        centerY,
+                        entry.x(),
+                        entry.z(),
+                        entry.yawDeg(),
+                        entry.colorR(),
+                        entry.colorG(),
+                        entry.colorB()
+                );
             }
+
+            // Local player last so their marker stays on top.
+            drawPlayerMarker(
+                    graphics,
+                    mc,
+                    centerX,
+                    centerY,
+                    player.getX(),
+                    player.getZ(),
+                    player.getYRot(),
+                    StormRadarConfig.playerColorR(),
+                    StormRadarConfig.playerColorG(),
+                    StormRadarConfig.playerColorB()
+            );
         } finally {
             graphics.disableScissor();
+        }
+    }
+
+    private static void drawPlayerMarker(
+            GuiGraphics graphics,
+            Minecraft mc,
+            int centerX,
+            int centerY,
+            double worldX,
+            double worldZ,
+            float yawDeg,
+            int colorR,
+            int colorG,
+            int colorB
+    ) {
+        double relX = worldX - ClientStormState.centerX;
+        double relZ = worldZ - ClientStormState.centerZ;
+        float mapX = (float) (relX / ClientStormState.radius * STORM_CIRCLE_RADIUS);
+        float mapY = (float) (relZ / ClientStormState.radius * STORM_CIRCLE_RADIUS);
+        float iconRadius = (float) Math.hypot(mapX, mapY);
+        float offMapMarkerRadius = STORM_CIRCLE_RADIUS + OFF_MAP_ICON_SIZE / 2.0F + 1.0F;
+
+        if (iconRadius > offMapMarkerRadius) {
+            float markerX = centerX + mapX / iconRadius * offMapMarkerRadius;
+            float markerY = centerY + mapY / iconRadius * offMapMarkerRadius;
+            drawOffMapIcon(graphics, mc, markerX, markerY, colorR, colorG, colorB);
+        } else {
+            drawPlayerIcon(graphics, mc, centerX + mapX, centerY + mapY, yawDeg, colorR, colorG, colorB);
         }
     }
 
@@ -225,26 +273,53 @@ public final class StormMapHudOverlay {
             float x,
             float y,
             float rotationDeg,
-            int size
+            int size,
+            int colorR,
+            int colorG,
+            int colorB
     ) {
+        float r = colorR / 255.0F;
+        float g = colorG / 255.0F;
+        float b = colorB / 255.0F;
         RenderSystem.enableBlend();
+        RenderSystem.setShaderColor(r, g, b, 1.0F);
+        graphics.setColor(r, g, b, 1.0F);
         graphics.pose().pushPose();
         graphics.pose().translate(x, y, 0.0F);
         graphics.pose().mulPose(Axis.ZP.rotationDegrees(rotationDeg));
         graphics.pose().translate(-size / 2.0F, -size / 2.0F, 0.0F);
         graphics.blit(0, 0, 200, size, size, sprite);
         graphics.pose().popPose();
+        graphics.setColor(1.0F, 1.0F, 1.0F, 1.0F);
+        RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
         RenderSystem.disableBlend();
     }
 
-    private static void drawPlayerIcon(GuiGraphics graphics, Minecraft mc, float x, float y, float yRot) {
+    private static void drawPlayerIcon(
+            GuiGraphics graphics,
+            Minecraft mc,
+            float x,
+            float y,
+            float yRot,
+            int colorR,
+            int colorG,
+            int colorB
+    ) {
         TextureAtlasSprite sprite = mc.getMapDecorationTextures().get(PLAYER_DECORATION);
-        drawMapDecoration(graphics, sprite, x, y, mapDecorationRotation(yRot), PLAYER_ICON_SIZE);
+        drawMapDecoration(graphics, sprite, x, y, mapDecorationRotation(yRot), PLAYER_ICON_SIZE, colorR, colorG, colorB);
     }
 
-    private static void drawOffMapIcon(GuiGraphics graphics, Minecraft mc, float x, float y) {
+    private static void drawOffMapIcon(
+            GuiGraphics graphics,
+            Minecraft mc,
+            float x,
+            float y,
+            int colorR,
+            int colorG,
+            int colorB
+    ) {
         TextureAtlasSprite sprite = mc.getMapDecorationTextures().get(PLAYER_OFF_MAP_DECORATION);
-        drawMapDecoration(graphics, sprite, x, y, 0.0F, OFF_MAP_ICON_SIZE);
+        drawMapDecoration(graphics, sprite, x, y, 0.0F, OFF_MAP_ICON_SIZE, colorR, colorG, colorB);
     }
 
     private static void fillCircle(GuiGraphics graphics, int cx, int cy, int radius, int color) {

@@ -68,7 +68,7 @@ public record ApplyStormPathPreviewPayload(
     }
 
     private static void onRegister(RegisterPayloadHandlersEvent event) {
-        PayloadRegistrar registrar = event.registrar(EyeOfTheStormMod.MOD_ID).versioned("11");
+        PayloadRegistrar registrar = event.registrar(EyeOfTheStormMod.MOD_ID).versioned("13");
         registrar.playToServer(TYPE, STREAM_CODEC, ApplyStormPathPreviewPayload::handleServer);
     }
 

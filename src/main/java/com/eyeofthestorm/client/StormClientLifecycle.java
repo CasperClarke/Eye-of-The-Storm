@@ -1,7 +1,6 @@
 package com.eyeofthestorm.client;
 
 import com.eyeofthestorm.EyeOfTheStormMod;
-import com.eyeofthestorm.client.ClientStormState;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
@@ -15,7 +14,7 @@ public final class StormClientLifecycle {
     public static void onLevelUnload(LevelEvent.Unload event) {
         if (event.getLevel().isClientSide()) {
             ClientStormState.reset();
-            StormRadarState.reset();
+            ClientRadarPlayers.reset();
             StormDebugState.reset();
             StormPathHistory.reset();
         }
